@@ -1,0 +1,24 @@
+add := '+' pop2 -> this.stack.push(this.op1+this.op2)
+sub := '-' pop2 -> this.stack.push(this.op1-this.op2)
+div := '/' pop2 -> this.stack.push(this.op1/this.op2)
+mul := '*' pop2 -> this.stack.push(this.op1*this.op2)
+
+number := '-'? digits ('.' digits)? ->
+  var sign = $1 ? '-' : '';
+  var frac = $3 ? $3.join('') : '';
+  this.stack.push(Number(sign + $2 + frac));
+
+digits := [0-9]+ -> return $1.join('')
+
+pop2 := '' ->
+  this.op1 = this.stack.pop();
+  this.op2 = this.stack.pop();
+
+init := '' -> this.stack = []
+
+body := ([\s]* token)+ [\s]*;
+
+token := number | add | sub | div | mul;
+
+main calc := init body -> return this.stack[this.stack.length - 1]
+
