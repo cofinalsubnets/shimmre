@@ -7,8 +7,8 @@ peg =
     (t1 = p1 str) and (t2 = p2 t1.rem) and match(t1.val.concat(t2.val), t2.rem)
   alt: (p1, p2) -> (str) -> p1(str) or p2 str
   opt: (p) -> (str) -> p(str) or match([], str)
-  rep: (p) -> (s) -> (r=p s) and
-    map(peg.rep(p), (a) -> a.unshift(r.val);a)(r.rem) or match([], s)
+  rep: (p) -> (s) ->
+    (r = p s) and map(peg.rep(p), (a) -> r.val.concat a)(r.rem) or match([], s)
   andp: (p1) -> (str) -> p1(str) and match([], str)
   notp: (p1) -> (str) -> not p1(str) and match([], str)
 
@@ -21,17 +21,16 @@ _  = cheat /^[\s]*/
 __ = cheat /^[\s]+/
 nth = (ns...) -> (v) -> v[n] for n in ns
 pluck = (v) -> v[0]
-sepBy = (p, sep) -> cat p, peg.rep(map cat(map(sep, ->[]), p), pluck)
+sepBy = (p, sep) -> cat p, peg.rep cat(map(sep, ->[]), p)
 
 map = (fn, mfns...) -> (str) ->
   (r = fn str) and match(mfns.reduce(((d,f) -> f d), r.val), r.rem)
 tag = (t) -> (d) -> [{tag: t, data: d}]
-retag = (t) -> (d) -> [{tag: t, data: d.data}]
+retag = (t) -> (d) -> d.map (_d) -> {tag: t, data: _d.data}
 notp = (p1, p2) -> peg.cat peg.notp(p1), p2
 
-exports.atoms = {}
 # bootstrapping parser -- grammar -> parse tree
-atom = map cheat(/^[a-zA-Z_][a-zA-Z0-9_'-]*/), pluck, ((n) -> exports.atoms[n]=true; n), tag 'atom'
+atom = map cheat(/^[a-zA-Z_][a-zA-Z0-9_'-]*/), pluck, tag 'atom'
 bound = (mfn) ->
   map cat(mfn, string(':'), atom), ((n) -> n[0].name=n[2].data; [n[0]])
 term = map cheat(/^("(\\"|[^"])*"|'(\\'|[^'])*')/), pluck, ((n) -> n[1..-2]),
@@ -52,16 +51,20 @@ exp3  = (s) -> map(sepBy(exp2, cat(_, string('|'), _)), tag 'alt') s
 paren = map cat(string('('), _, exp3, _, string ')'), nth(2)
 charopt = map cheat(/^\[(\\]|[^\]])*\]/), pluck, tag 'charopt'
 
-subPRule = map cat(atom, _, string('<-'), _, map(exp3, pluck)),
+subPRule = map cat(atom, _, string('<-'), _, exp3),
   nth(0,4), tag 'parse_rule'
-mainPRule = map cat(string("main"), __, subPRule), nth(2), pluck, retag 'main'
+mainPRule = map cat(string("main"), __, subPRule), nth(2), retag 'main'
 pRule = alt mainPRule, subPRule
 
-code = map cheat(/^(.|\n(?=\s))*/), pluck, tag 'code'
+code = map cheat(/^(.|\n(?=\s))*/), tag 'code'
 cRule = map cat(atom, _, string('->'), _, code), nth(0,4), tag 'compile_rule'
 rule = alt pRule, cRule
 exports.parse = map cat(sepBy(rule, _), map(_, ->[])), tag('document'), pluck
 exports.term = term
+exports.cheat = cheat
+
+exports.peg = peg
+exports.sepBy = sepBy
 
 # bootstrapping compiler -- parse tree -> function
 
@@ -75,6 +78,7 @@ class Compile
   constructor: ->
     @rules = {}
     @context = {}
+    @parsedata = {}
 
   compile: (d) ->
     unless d.tag of this
@@ -109,27 +113,26 @@ class Compile
   term: peg.term
   charopt: (rs) -> cheat RegExp "^#{rs}"
 
-  parse_rule: (r) -> @rules[r[0].data] = @compile r[1]
+  parse_rule: (r) ->
+    @parsedata[r[0].data] ||= r[1]
+    @rules[r[0].data] = @compile r[1]
 
   atom: (a) -> _rs=@rules; (s) -> _rs[a] s
-
   not: (n) -> peg.notp @compile n
   and: (n) -> peg.andp @compile n
 
   compile_rule: (r) ->
-    [_atm,_code] = r
+    [_atm, _code] = r
 
     # FIXME
     unless _rule = @rules[_atm.data]
       throw new Error(
         "Compile rules must (currently) come after associated parse rules")
 
-    _tfn = eval "(function (data) {#{_code.data}})"
-    _context = @context
-    _transform = (n) -> if (__r = (_tfn.call _context, n))? then [__r] else []
+    _tfn = eval "(function (#{"$#{n}" for n in [1..9]}) {#{_code.data}})"
+    _ctx = @context
+    _transform = (argv) -> if (x = (_tfn.apply _ctx, argv))? then [x] else []
     @rules[_atm.data] = map _rule, _transform
-
-
 
 exports.compile = (pt) -> (c = new Compile()).compile pt; c
 exports.peg = peg
