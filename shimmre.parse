@@ -1,0 +1,36 @@
+_ <- [\s]+
+
+parseRule <- mainParseRule | subParseRule
+
+mainParseRule <- 'main' _ subParseRule
+
+subParseRule <- atom _? '<-' _? altExpr
+
+compileRule <- atom _? '->' code
+code <- ([.] | !('\n' [^\s]) '\n')*
+
+atom <- [a-zA-Z_] [a-zA-Z0-9_'-]*
+
+term <- '"' ('\"' | [^"])* '"'
+      | "'" ("\'" | [^'])* "'"
+
+baseExpr <- !rule atom | term | charOpt | paren
+
+rep  <- baseExpr _? '*'
+opt  <- baseExpr _? '?'
+plus <- baseExpr _? '+'
+not  <- '!' _? baseExpr
+and  <- '&' _? baseExpr
+
+catExpr <- (rep | opt | plus | baseExpr) (_ catExpr)?
+altExpr <- catExpr (_? '|' _? altExpr)?
+
+paren <- '(' _? altExpr _? ')'
+
+charOpt <- '[' ('\]' | [^\]])* ']'
+
+rule <- parseRule | compileRule
+
+main rules <- init rule _? rules?
+
+init <- ''
