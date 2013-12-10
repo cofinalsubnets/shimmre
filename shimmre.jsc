@@ -102,8 +102,8 @@ init ->
 atom -> return $.join('')
 rAtom -> return "rules["+JSON.stringify($[0])+"]";
 term -> return "peg.term("+JSON.stringify($.join(''))+")"
-alt  -> return "["+$.join(',')+"].reduce(peg.alt)"
-cat  -> return "["+$.join(',')+"].reduce(peg.cat)"
+alt  -> return $.length == 1 ? $[0] : "["+$.join(',')+"].reduce(peg.alt)"
+cat  -> return $.length == 1 ? $[0] : "["+$.join(',')+"].reduce(peg.cat)"
 not  -> return "peg.notp("+$[0]+")"
 rep  -> return "peg.rep("+$[0]+")"
 opt  -> return "peg.opt("+$[0]+")"
@@ -129,7 +129,7 @@ mainP ->
     _rs += "}";
 
     return "(function () {var peg="+_peg+",match="+match.toString()+
-    ",map="+this.map.toString()+",rules="+_rs+
+    ",map="+this.map.toString()+",rules="+_rs+",merge=function(v){if(!(v==null||v===undefined))return Array.isArray(v)?v:[v];return[];}"+
     ";return function(str){return rules["+JSON.stringify(cr)+"](str);}})()"
   };
 
@@ -141,8 +141,6 @@ compile ->
     throw new ReferenceError(
       "Compile rule `" + atom + "' defined before parse rule");
   var tfn       = "(function($){"+code+"})",
-      rtrn      = "(function(r){var v="+tfn+"(r);if(!(v===null||v===undefined))return Array.isArray(v)?v:[v];return[]})",
-      ret =  "map("+rule+","+rtrn+")"
-
-  return this.rules[atom] = ret;
+      rtrn      = "(function(r){return merge("+tfn+"(r))})";
+  return this.rules[atom] = "map("+rule+","+rtrn+")"
 
