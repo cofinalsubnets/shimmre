@@ -1,0 +1,148 @@
+_ <- -[\s]+
+
+parse <- mainP | sub
+
+mainP <- -'main' _ sub
+
+sub <- atom _? -'<-' _? alt
+
+compile <- atom _? -'->' code
+code <- ([\S ] | &([\n] [\s]) [\n])*
+
+atom <- [a-zA-Z_] [a-zA-Z0-9_'-]*
+
+term <- -'"' ('\"' | [^"])* -'"'
+      | -"'" ("\'" | [^'])* -"'"
+
+ruleInit <- ('main' _)? atom _ '<-'
+          | atom _ '->'
+
+expr <- rAtom | term | charopt | paren
+rAtom <- !ruleInit atom
+
+rep  <- expr _? -'*'
+opt  <- expr _? -'?'
+plus <- expr _? -'+'
+expr'  <- rep | opt | plus | expr
+
+not  <- -'!' _? expr'
+and  <- -'&' _? expr'
+drop <- -'-' _? expr'
+expr'' <- not | and | drop | expr'
+
+cat <- expr'' (_ cat)?
+alt <- cat (_? -'|' _? alt)?
+
+paren <- -'(' _? alt _? -')'
+
+charopt <- '[' ('\]' | [^\]])* ']'
+
+init <- -''
+rule <- parse | compile
+main rules <- init (_? rule)+ _?
+
+init ->
+  this.peg = {
+    term: function(t) {
+      return function(str) {
+        return str.substr(0, t.length) === t && match([t], str.slice(t.length));
+      };
+    },
+    cat: function(p1, p2) {
+      return function(str) {
+        var t1, t2;
+        return (t1 = p1(str)) && (t2 = p2(t1.rem)) && match(t1.val.concat(t2.val), t2.rem);
+      };
+    },
+    alt: function(p1, p2) {
+      return function(str) {
+        return p1(str) || p2(str);
+      };
+    },
+    opt: function(p) {
+      return function(str) {
+        return p(str) || match([], str);
+      };
+    },
+    rep: function(p) {
+      return function(s) {
+        var r;
+        return (r = p(s)) && map(peg.rep(p), function(a) {
+          return r.val.concat(a);
+        })(r.rem) || match([], s);
+      };
+    },
+    andp: function(p1) {
+      return function(str) {
+        return p1(str) && match([], str);
+      };
+    },
+    notp: function(p1) {
+      return function(str) {
+        return !p1(str) && match([], str);
+      };
+    },
+    cheat: function(re, n) {
+      return function(s) {
+        var r;
+        return (r = s.match(re)) && match([r[n || 0]], s.slice(r[n || 0].length));
+      };
+    }
+  };
+
+  this.rules = {};
+  this.context = {};
+  this.map = function (mfn, fn) {
+    return function (s) {
+      var res = mfn(s);
+      return res && {val: fn(res.val), rem: res.rem};
+    };
+  };
+
+atom -> return $.join('')
+rAtom -> return "rules["+JSON.stringify($[0])+"]";
+term -> return "peg.term("+JSON.stringify($.join(''))+")"
+alt  -> return "["+$.join(',')+"].reduce(peg.alt)"
+cat  -> return "["+$.join(',')+"].reduce(peg.cat)"
+not  -> return "peg.notp("+$[0]+")"
+rep  -> return "peg.rep("+$[0]+")"
+opt  -> return "peg.opt("+$[0]+")"
+and  -> return "peg.andp("+$[0]+")"
+plus -> return "peg.cat("+$[0]+",peg.rep("+$[0]+"))"
+drop -> return "map("+$[0]+",function(){return [];})"
+charopt -> return "peg.cheat(RegExp('^'+"+JSON.stringify($.join(''))+"))"
+sub ->
+  // _such_ a gross hack
+  this.currentRule = $[0];
+  return this.rules[$[0]] = $[1]
+
+rules ->
+  return this.output = this.outputFn();
+
+mainP ->
+  return this.outputFn = function () {
+    var rs = this.rules, cr = this.currentRule, _peg="{", _x, _rs="{";
+    for (_x in this.peg)
+      _peg += JSON.stringify(_x)+": "+this.peg[_x].toString()+",";
+    for (_x in rs) _rs += JSON.stringify(_x)+": function(s){return "+rs[_x]+"(s);},\n";
+    _peg += "}";
+    _rs += "}";
+
+    return "(function () {var peg="+_peg+",match="+match.toString()+
+    ",map="+this.map.toString()+",rules="+_rs+
+    ";return function(str){return rules["+JSON.stringify(cr)+"](str);}})()"
+  };
+
+code -> return $.join('')
+
+compile -> 
+  var atom = $[0], code = $[1], rule;
+  if (!(rule = this.rules[atom]))
+    throw new ReferenceError(
+      "Compile rule `" + atom + "' defined before parse rule");
+  var tfn       = "(function($){"+code+"})",
+      rtrn      = "(function(r){var v="+tfn+"(r);if(!(v===null||v===undefined))return Array.isArray(v)?v:[v];return[]})",
+      ret =  "map("+rule+","+rtrn+")"
+
+  return this.rules[atom] = ret;
+

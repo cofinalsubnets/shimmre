@@ -27,7 +27,6 @@ sepBy = (p, sep) -> cat p, peg.rep cat(map(sep, ->[]), p)
 map = (fn, mfns...) -> (str) ->
   (r = fn str) and match(mfns.reduce(((d,f) -> f d), r.val), r.rem)
 tag = (t) -> (d) -> [{tag: t, data: d}]
-retag = (t) -> (d) -> d.map (_d) -> {tag: t, data: _d.data}
 notp = (p1, p2) -> peg.cat peg.notp(p1), p2
 
 # bootstrapping parser -- grammar -> parse tree
