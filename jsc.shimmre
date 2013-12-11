@@ -67,7 +67,7 @@ init ->
     rep: function(p) {
       return function(s) {
         var r;
-        return (r = p(s)) && map(rep(p), function(a) {
+        return (r = p(s)) && map(peg.rep(p), function(a) {
           return r.val.concat(a);
         })(r.rem) || match([], s);
       };
@@ -82,10 +82,10 @@ init ->
         return !p1(str) && match([], str);
       };
     },
-    cheat: function(re) {
+    cheat: function(re, n) {
       return function(s) {
         var r;
-        return (r = s.match(re)) && match([r[0]], s.slice(r[0].length));
+        return (r = s.match(re)) && match([r[n || 0]], s.slice(r[n || 0].length));
       };
     }
   };
@@ -101,44 +101,36 @@ init ->
 
 atom -> return $.join('')
 rAtom -> return "rules["+JSON.stringify($[0])+"]";
-term -> return "term("+JSON.stringify($.join(''))+")"
-alt  ->
-  if ($.length == 1)
-    return $[0];
-  else if ($.length == 2)
-    return "alt("+ $.join(',') + ")";
-  else
-    return "["+$.join(',')+"].reduce(alt)"
-cat  ->
-  if ($.length == 1)
-    return $[0];
-  else if ($.length == 2)
-    return "cat("+ $.join(',') + ")";
-  else
-    return "["+$.join(',')+"].reduce(cat)"
-not  -> return "notp("+$[0]+")"
-rep  -> return "rep("+$[0]+")"
-opt  -> return "opt("+$[0]+")"
-and  -> return "andp("+$[0]+")"
-plus -> return "cat("+$[0]+",rep("+$[0]+"))"
-drop -> return "map("+$[0]+",drop)"
-charopt -> return "cheat(RegExp('^'+"+JSON.stringify($.join(''))+"))"
+term -> return "peg.term("+JSON.stringify($.join(''))+")"
+alt  -> return $.length == 1 ? $[0] : "["+$.join(',')+"].reduce(peg.alt)"
+cat  -> return $.length == 1 ? $[0] : "["+$.join(',')+"].reduce(peg.cat)"
+not  -> return "peg.notp("+$[0]+")"
+rep  -> return "peg.rep("+$[0]+")"
+opt  -> return "peg.opt("+$[0]+")"
+and  -> return "peg.andp("+$[0]+")"
+plus -> return "peg.cat("+$[0]+",peg.rep("+$[0]+"))"
+drop -> return "map("+$[0]+",function(){return [];})"
+charopt -> return "peg.cheat(RegExp('^'+"+JSON.stringify($.join(''))+"))"
 sub ->
+  // _such_ a gross hack
   this.currentRule = $[0];
   return this.rules[$[0]] = $[1]
 
-rules -> return this.output = this.outputFn();
+rules ->
+  return this.output = this.outputFn();
 
 mainP ->
   return this.outputFn = function () {
-    var _pegs="", _x, _rs="{";
-    for (_x in this.peg) _pegs += _x+"="+this.peg[_x].toString()+",";
-    for (_x in this.rules) _rs += JSON.stringify(_x)+": function(s){return "+this.rules[_x]+"(s);},\n";
+    var rs = this.rules, cr = this.currentRule, _peg="{", _x, _rs="{";
+    for (_x in this.peg)
+      _peg += JSON.stringify(_x)+": "+this.peg[_x].toString()+",";
+    for (_x in rs) _rs += JSON.stringify(_x)+": function(s){return "+rs[_x]+"(s);},\n";
+    _peg += "}";
     _rs += "}";
 
-    return "(function(){var "+_pegs+"match="+match.toString()+
-    ",map="+this.map.toString()+",rules="+_rs+",merge=function(f){return function(s){if(!((v=f(s))===null||v===undefined))return Array.isArray(v)?v:[v];return[];};}"+
-    ",drop=function(){return[];};return function(str){return rules["+JSON.stringify(this.currentRule)+"](str);}})()"
+    return "(function () {var peg="+_peg+",match="+match.toString()+
+    ",map="+this.map.toString()+",rules="+_rs+",merge=function(v){if(!(v==null||v===undefined))return Array.isArray(v)?v:[v];return[];}"+
+    ";return function(str){return rules["+JSON.stringify(cr)+"](str);}})()"
   };
 
 code -> return $.join('')
@@ -149,6 +141,6 @@ compile ->
     throw new ReferenceError(
       "Compile rule `" + atom + "' defined before parse rule");
   var tfn       = "(function($){"+code+"})",
-      rtrn      = "merge("+tfn+")";
+      rtrn      = "(function(r){return merge("+tfn+"(r))})";
   return this.rules[atom] = "map("+rule+","+rtrn+")"
 

@@ -61,7 +61,7 @@ exports.parse = map cat(sepBy(rule, _), map(_, ->[])), tag('document'), pluck
 # bootstrapping compiler -- parse tree -> function
 class Compile
   constructor: ->
-    @rules = {}; @context = {rules: @rules}
+    @rules = {}; @context = {}
 
   _compile: (d) ->
     unless d.tag of this
