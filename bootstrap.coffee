@@ -9,15 +9,14 @@ peg =
   opt: (p) -> (str) -> p(str) or match([], str)
   rep: (p) -> (s) ->
     (r = p s) and map(peg.rep(p), (a) -> r.val.concat a)(r.rem) or match([], s)
-  andp: (p1) -> (str) -> p1(str) and match([], str)
-  notp: (p1) -> (str) -> not p1(str) and match([], str)
+  andp: (p) -> (str) -> p(str) and match([], str)
+  notp: (p) -> (str) -> not p(str) and match([], str)
 
 # helpers
 cat = (ms...) -> ms.reduce peg.cat
 alt = (ms...) -> ms.reduce peg.alt
 string = peg.term
-cheat = (re,n) -> (s) -> (r = s.match re) and
-  match [r[n||0]], s[r[n||0].length..]
+cheat = (re) -> (s) -> (r = s.match re) and match [r[0]], s[r[0].length..]
 _  = cheat /^[\s]*/
 __ = cheat /^[\s]+/
 nth = (ns...) -> (v) -> v[n] for n in ns
@@ -35,23 +34,22 @@ term = map cheat(/^("(\\"|[^"])*"|'(\\'|[^'])*')/), pluck, ((n) -> n[1..-2]),
   tag 'term'
 
 exp0 = (s) -> alt(notp(ruleInit, atom), term, charopt, paren) s
-ruleInit = alt cat(peg.opt(cat(string("main"), __)), atom, _, string('<-')),
+ruleInit = alt cat(peg.opt(cat(string("main"), __)), atom, _, string '<-'),
   cat(atom, _, string '->')
 
 [repP, optP, plus] = for [s,t] in [['*','rep'],['?','opt'],['+','plus']]
   map cat(exp0, _, string s), nth(0), pluck, tag t
-exp1 =alt repP, optP, plus, exp0
+exp1 = alt repP, optP, plus, exp0
 
 [notP, andP, drop] = for [s,t] in [['!','not'],['&','and'],['-','drop']]
   map cat(string(s), _, exp1), nth(2), pluck, tag t
-
 exp2  = map sepBy(alt(notP, andP, drop, exp1), __), tag 'cat'
+
 exp3  = (s) -> map(sepBy(exp2, cat(_, string('|'), _)), tag 'alt') s
 paren = map cat(string('('), _, exp3, _, string ')'), nth(2)
 charopt = map cheat(/^\[(\\]|[^\]])*\]/), pluck, tag 'charopt'
 
-subPRule = map cat(atom, _, string('<-'), _, exp3),
-  nth(0,4), tag 'parse'
+subPRule = map cat(atom, _, string('<-'), _, exp3), nth(0,4), tag 'parse'
 mainPRule = map cat(string("main"), __, subPRule), nth(2), pluck, tag 'main'
 pRule = alt mainPRule, subPRule
 
@@ -74,14 +72,13 @@ class Compile
     @_compile r for r in rs
     unresolved = []
     for r of @rules
-      try
-        @rules[r] ''
+      try @rules[r] ''
       catch e
         # FIXME: better solution than regex
         if e instanceof TypeError and m = e.message.match /method '([^']+)/
           unresolved.push m[1]
         else throw e
-    if unresolved.length
+    if unresolved.length isnt 0
       throw new ReferenceError(
         "Can't resolve parsing expressions: #{unresolved.join ', '}")
 
@@ -89,21 +86,6 @@ class Compile
     @_compile r
     _rs = @rules
     @output = (s) -> _rs[r.data[0].data] s
-  plus: (r) -> @_compile {tag: 'cat', data: [r, {tag: 'rep', data: r}]}
-  cat: (rs) -> cat.apply this, rs.map(@_compile, this)
-  alt: (rs) -> if rs.length is 1 then @_compile rs[0] else
-    alt.apply this, rs.map(@_compile, this)
-
-  rep: (r) -> peg.rep @_compile r
-  opt: (r) -> peg.opt @_compile r
-  charopt: (rs) -> cheat RegExp "^#{rs}"
-  term: peg.term
-
-  parse: (r) -> @rules[r[0].data] = @_compile r[1]
-  atom: (a) -> _rs = @rules; (s) -> _rs[a] s
-  not: (n) -> peg.notp @_compile n
-  and: (n) -> peg.andp @_compile n
-  drop: (n) -> map @_compile(n), ->[]
 
   compile: (r) ->
     [_atm, _code] = r
@@ -117,19 +99,27 @@ class Compile
     _ctx = @context
     _transform = (argv) ->
       x = _tfn.call _ctx, argv
-# this part is weird but i'm not sure how do do it better
-      if x?
-        if Array.isArray(x) then x else [x]
-      else []
+      if x? then Array.isArray(x) and x or [x] else []
     @rules[_atm.data] = map _rule, _transform
 
+  plus: (r) -> @cat [r, {tag: 'rep', data: r}]
+  cat: (rs) -> cat.apply this, rs.map(@_compile, this)
+  alt: (rs) -> alt.apply this, rs.map(@_compile, this)
+  term: peg.term
+  rep: (r) -> peg.rep @_compile r
+  opt: (r) -> peg.opt @_compile r
+  charopt: (c) -> cheat RegExp "^#{c}"
+  parse: (r) -> @rules[r[0].data] = @_compile r[1]
+  atom:  (a) -> _rs = @rules; (s) -> _rs[a] s
+  not:   (n) -> peg.notp @_compile n
+  and:   (n) -> peg.andp @_compile n
+  drop:  (n) -> map @_compile(n), ->[]
+
 exports.compile = (s) ->
-  _res = exports.parse s
-  if not _res
+  if not _res = exports.parse s
     throw new SyntaxError "Parse failed at start of input"
   else if _res.rem isnt ''
     throw new SyntaxError "Parse failed:\n#{_res.rem[..70]} ...\n^"
   else
-    (c = new Compile())._compile _res.val
-    c.output
+    (c = new Compile())._compile _res.val; c.output
 
