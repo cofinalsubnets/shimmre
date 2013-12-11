@@ -43,40 +43,40 @@ main rules <- init (_? rule)+ _?
 
 init ->
   this.rules = {};
-  this.context = {rules: this.rules};
-  this.match = function (a,b) {return {val:a, rem:b};};
-  this.map = function (mf,f) {
+  this.context = {};
+  var map = this.map = function (mf,f) {
     return function (s) {
       var res = mf(s);
-      return res && this.match(f(res.val), res.rem);
+      return res && {val: f(res.val), rem: res.rem};
     };
   };
+  this.cat = function(a,b) { return function(s) {
+    var t1, t2;
+    return (t1 = a(s)) && (t2 = b(t1.rem)) && {val: t1.val.concat(t2.val), rem: t2.rem};
+  }};
+  var rep = this.rep = function (m) { return function (s) {
+    var r;
+    return (r = m(s)) && map(rep(m),
+      function(a) {return r.val.concat(a);})(r.rem) || {val: [], rem: s};
+  }};
 
 atom -> return $.join('')
 rAtom -> var rs = this.rules; return function (s) { return rs[$](s); };
 
 term ->
   return function(s) {
-    return s.substr(0, $[0].length) === $[0] && this.match ([$[0]], s.slice($[0].length));
+    return s.substr(0, $[0].length) === $[0] && {val: [$[0]], rem: s.slice($[0].length)};
   }
 
 alt  -> return $.reduce(function(a,b) { return function(s) { return a(s) || b(s); }; });
 
-cat  -> return $.reduce(function(a,b) { return function(s) {
-    var t1, t2;
-    return (t1 = a(s)) && (t2 = b(t1.rem)) && this.match(t1.val.concat(t2.val), t2.rem);
-  }});
+cat  -> return $.reduce(this.cat);
 
-rep  ->
-  return function (s) {
-    var r;
-    return (r = $[0](s)) && this.map(this.rules.rep($),
-      function(a) {return r.val.concat(a);})(r.rem) || this.match([], s);
-  };
+rep  -> return this.rep($[0]);
 
-not  -> return function(s) { return !$[0](s) && this.match([], s); }
-opt  -> return function(s) { return $[0](s) || this.match([], s); }
-and  -> return function(s) { return $[0](s) && this.match([], s); }
+not  -> return function(s) { return !$[0](s) && {val: [], rem: s}; }
+opt  -> return function(s) { return $[0](s) || {val: [], rem: s}; }
+and  -> return function(s) { return $[0](s) && {val: [], rem: s}; }
 plus -> return this.rules.cat($[0], this.rules.rep($[0]));
 drop -> return this.map($[0], function () {return [];})
 
@@ -84,7 +84,7 @@ charopt ->
   var re = RegExp('^' + $.join(''));
   return function (s) {
     var r;
-    return (r = s.match(re) && this.match(r[0], s.slice(r[0].length)));
+    return (r = s.match(re) && {val: r[0], rem: s.slice(r[0].length)});
   }
 
 sub ->
