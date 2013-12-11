@@ -115,11 +115,7 @@ class Compile
   and:   (n) -> peg.andp @_compile n
   drop:  (n) -> map @_compile(n), ->[]
 
-exports.compile = (s) ->
-  if not _res = exports.parse s
-    throw new SyntaxError "Parse failed at start of input"
-  else if _res.rem isnt ''
-    throw new SyntaxError "Parse failed:\n#{_res.rem[..70]} ...\n^"
-  else
-    (c = new Compile())._compile _res.val; c.output
+# for consistency with 1-stage versions
+exports.compile = map exports.parse, (pt) ->
+  (c = new Compile())._compile pt; [c.output]
 

@@ -92,6 +92,7 @@ init ->
 
   this.rules = {};
   this.context = {};
+  delete this.output;
   this.fmap = function (mfn, fn) {
     return function (s) {
       var res = mfn(s);
