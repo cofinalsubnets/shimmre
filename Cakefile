@@ -8,6 +8,6 @@ compile = (infile, outfile) ->
 
 task 'build:shimmre', 'compile shimmre.shimmre to javascript', ->
   compile './shimmre.shimmre', './shimmre.js'
-task 'build:jsc', 'compile shimmre.jsc to javascript', ->
+task 'build:jsc', 'compile jsc.shimmre to javascript', ->
   compile './jsc.shimmre', './jsc.js'
 
