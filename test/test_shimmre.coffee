@@ -87,4 +87,15 @@ exports.test = (doc, shim) ->
         p = 'main a <- &"b" [bc]'
         assert accepts(p, 'b')
         assert not accepts(p, 'c')
-
+    
+    describe 'a comment', ->
+      it 'is ignored until the end of the line', ->
+        p = """
+        main a <- "minnesota"   ; cold in winter
+                | "florida"     ; hot in summer
+                | "nova scotia" ; canadian
+               ;| "belgium"     ; home of the flemish
+        """
+        for place in ["minnesota", "florida", "nova scotia"]
+          assert accepts(p, place)
+        assert not accepts(p, "belgium")

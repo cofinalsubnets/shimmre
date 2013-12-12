@@ -17,8 +17,6 @@ cat = (ms...) -> ms.reduce peg.cat
 alt = (ms...) -> ms.reduce peg.alt
 string = peg.term
 cheat = (re) -> (s) -> (r = s.match re) and match [r[0]], s[r[0].length..]
-_  = cheat /^[\s]*/
-__ = cheat /^[\s]+/
 nth = (ns...) -> (v) -> v[n] for n in ns
 pluck = (v) -> v[0]
 sepBy = (p, sep) -> cat p, peg.rep cat(map(sep, ->[]), p)
@@ -29,6 +27,8 @@ tag = (t) -> (d) -> [{tag: t, data: d}]
 notp = (p1, p2) -> peg.cat peg.notp(p1), p2
 
 # bootstrapping parser -- grammar -> parse tree
+__ = cheat /^(\s|;.*)+/
+_  = cheat /^(\s|;.*)*/
 atom = map cheat(/^[a-zA-Z_][a-zA-Z0-9_'-]*/), pluck, tag 'atom'
 term = map cheat(/^("(\\"|[^"])*"|'(\\'|[^'])*')/), pluck, ((n) -> n[1..-2]),
   tag 'term'

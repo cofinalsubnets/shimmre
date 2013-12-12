@@ -1,4 +1,4 @@
-_ <- -[\s]+
+_ <- -(';' [^\n]* | [\s])+
 
 parse <- mainP | sub
 
@@ -98,9 +98,10 @@ init ->
       return res && {val: fn(res.val), rem: res.rem};
     };
   };
+  this.dottable = function (s) { return s.match(/^[a-zA-Z_]\w*$/); };
 
 atom -> return $.join('')
-rAtom -> return "rules["+JSON.stringify($[0])+"]";
+rAtom -> return this.dottable($[0]) ? "rules."+$[0] : "rules["+JSON.stringify($[0])+"]"
 term -> return "term("+JSON.stringify($.join(''))+")"
 alt  -> return $.length == 1 ? $[0] : $.length == 2 ? "alt("+$.join(',')+")" : "["+$.join(',')+"].reduce(alt)"
 cat  -> return $.length == 1 ? $[0] : $.length == 2 ? "cat("+$.join(',')+")" : "["+$.join(',')+"].reduce(cat)"
@@ -124,12 +125,14 @@ mainP ->
     var _peg="", _x, _rs="{";
     for (_x in this.peg)
       _peg += _x +"="+this.peg[_x].toString()+",";
-    for (_x in this.rules) _rs += JSON.stringify(_x)+": function(s){return "+this.rules[_x]+"(s);},\n";
+    for (_x in this.rules)
+      _rs += (this.dottable(_x)?_x:JSON.stringify(_x))+": function(s){return "+this.rules[_x]+"(s);},\n";
     _rs += "}";
 
     return "(function () {var "+_peg+"match=function(a,b){return{val:a,rem:b};}"+
     ",map="+this.map.toString()+",rules="+_rs+",merge=function(v){return(v===null||v===undefined)?[]:Array.isArray(v)?v:[v];}"+
-    ",drop=function(){return [];};return function(str){return rules["+JSON.stringify(this.currentRule)+"](str);}})()"
+    ",drop=function(){return [];};return function(str){return rules"+
+    (this.dottable(this.currentRule) ? "."+this.currentRule : "["+JSON.stringify(this.currentRule)+"]")+"(str);}})()";
   };
 
 code -> return $.join('')
@@ -139,7 +142,6 @@ compile ->
   if (!(rule = this.rules[atom]))
     throw new ReferenceError(
       "Compile rule `" + atom + "' defined before parse rule");
-  var tfn       = "(function($){"+code+"})",
-      rtrn      = "(function(r){return merge("+tfn+"(r))})";
-  return this.rules[atom] = "map("+rule+","+rtrn+")"
+  var tfn       = "function($){"+code+"}";
+  return this.rules[atom] = "map(map("+rule+","+tfn+"),merge)";
 

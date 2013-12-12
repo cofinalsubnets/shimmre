@@ -13,6 +13,8 @@ task 'build:jsc', 'compile shimmre.jsc to javascript', ->
   compileAndWrite './jsc.shimmre', './jsc.js'
 
 task 'test', 'run tests', ->
-  require('child_process').exec 'mocha --compilers coffee:coffee-script',
+  exec = require('child_process').exec
+  test = exec 'mocha --compilers coffee:coffee-script',
     (err, o, e) -> console.log o; console.log e
+  test.on 'close', process.exit
 

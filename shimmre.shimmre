@@ -1,4 +1,4 @@
-_ <- -[\s]+
+_ <- -(';' [^\n]* | [\s])+
 
 parse <- mainP | sub
 
@@ -42,76 +42,57 @@ rule <- parse | compile
 main rules <- init (_? rule)+ _?
 
 init ->
-  this.peg = {
-    term: function(t) {
-      return function(str) {
-        return str.substr(0, t.length) === t && match([t], str.slice(t.length));
-      };
-    },
-    cat: function(p1, p2) {
-      return function(str) {
-        var t1, t2;
-        return (t1 = p1(str)) && (t2 = p2(t1.rem)) && match(t1.val.concat(t2.val), t2.rem);
-      };
-    },
-    alt: function(p1, p2) {
-      return function(str) {
-        return p1(str) || p2(str);
-      };
-    },
-    opt: function(p) {
-      return function(str) {
-        return p(str) || match([], str);
-      };
-    },
-    rep: function(p) {
-      return function(s) {
-        var r;
-        return (r = p(s)) && map(peg.rep(p), function(a) {
-          return r.val.concat(a);
-        })(r.rem) || match([], s);
-      };
-    },
-    andp: function(p1) {
-      return function(str) {
-        return p1(str) && match([], str);
-      };
-    },
-    notp: function(p1) {
-      return function(str) {
-        return !p1(str) && match([], str);
-      };
-    },
-    cheat: function(re, n) {
-      return function(s) {
-        var r;
-        return (r = s.match(re)) && match([r[n || 0]], s.slice(r[n || 0].length));
-      };
-    }
-  };
-
-  this.rules = {};
-  this.context = {};
-  delete this.output;
-  this.fmap = function (mfn, fn) {
+  var map = this.map = function (mfn, fn) {
     return function (s) {
       var res = mfn(s);
       return res && {val: fn(res.val), rem: res.rem};
     };
   };
+  this.cat = function(p1, p2) {
+    return function(str) {
+      var t1, t2;
+      return (t1 = p1(str)) && (t2 = p2(t1.rem)) && match(t1.val.concat(t2.val), t2.rem);
+    };
+  };
+
+  var rep = this.rep = function(p) {
+    return function(s) {
+      var r;
+      return (r = p(s)) && map(rep(p), function(a) {
+        return r.val.concat(a);
+      })(r.rem) || match([], s);
+    };
+  };
+
+  this.rules = {};
+  this.context = {};
+  delete this.output;
 
 atom -> return $.join('')
 rAtom -> var rs = this.rules; return function (s) { return rs[$](s); };
-term -> return this.peg.term($.join(''))
-alt  -> return $.reduce(this.peg.alt)
-cat  -> return $.reduce(this.peg.cat)
-not  -> return this.peg.notp($[0])
-rep  -> return this.peg.rep($[0])
-opt  -> return this.peg.opt($[0])
-and  -> return this.peg.andp($[0])
-plus -> return this.peg.cat($[0], this.peg.rep($[0]))
-drop -> return this.fmap($[0], function () {return [];})
-charopt -> return this.peg.cheat(RegExp('^'+$.join('')))
+term ->
+  var t = $.join('');
+  return function (str) {
+    return str.substr(0, t.length) === t && match([t], str.slice(t.length));
+  };
+alt  -> return $.reduce(function (a,b) {
+    return function (s) { return a(s) || b(s); }
+  });
+cat  -> return $.reduce(this.cat)
+rep  -> return this.rep($[0])
+not  -> return function (s) { return !$[0](s) && {val:[], rem:s}; }
+opt  -> return function (s) { return $[0](s) || {val:[], rem:s}; }
+and  -> return function (s) { return $[0](s) && {val:[], rem:s}; }
+plus -> return this.cat($[0], this.rep($[0]))
+drop -> return this.map($[0], function () {return [];})
+
+charopt ->
+  var re = RegExp('^'+$.join(''));
+  return function (s) {
+    var r = s.match(re);
+    return r && {val:r[0], rem: s.slice(r[0].length)};
+  };
+
 sub ->
   // _such_ a gross hack
   this.currentRule = $[0];
@@ -133,9 +114,8 @@ compile ->
       context   = this.context,
       transform = function (argv) {
         var res = tfn.call(context, argv);
-        if (!(res === null || res === undefined))
-          return Array.isArray(res) ? res : [res];
-        else return [];
+        return (res === null || res === undefined) ? [] :
+          Array.isArray(res) ? res : [res];
       };
-  return this.rules[atom] = this.fmap(rule, transform);
+  return this.rules[atom] = this.map(rule, transform);
 
