@@ -1,4 +1,5 @@
 fs = require 'fs'
+exec = require('child_process').exec
 
 compileAndWrite = (infile, outfile) ->
   boot = require './bootstrap'
@@ -13,8 +14,10 @@ task 'build:jsc', 'compile shimmre.jsc to javascript', ->
   compileAndWrite './jsc.shimmre', './jsc.js'
 
 task 'test', 'run tests', ->
-  exec = require('child_process').exec
-  test = exec 'mocha --compilers coffee:coffee-script',
-    (err, o, e) -> console.log o; console.log e
-  test.on 'close', process.exit
+  compile = exec "coffee -o test -c *.litcoffee", ->
+  compile.on 'close', ->
+    test = exec 'mocha --compilers coffee:coffee-script', (err, o, e) -> console.log o; console.log e
+    test.on 'close', process.exit
+  
+
 

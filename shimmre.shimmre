@@ -94,7 +94,6 @@ charopt ->
   };
 
 sub ->
-  // _such_ a gross hack
   this.currentRule = $[0];
   return this.rules[$[0]] = $[1]
 

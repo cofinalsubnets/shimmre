@@ -82,10 +82,10 @@ init ->
         return !p1(str) && match([], str);
       };
     },
-    cheat: function(re, n) {
+    cheat: function(re) {
       return function(s) {
         var r;
-        return (r = s.match(re)) && match([r[n || 0]], s.slice(r[n || 0].length));
+        return (r = s.match(re)) && match([r[0]], s.slice(r[0].length));
       };
     }
   };
