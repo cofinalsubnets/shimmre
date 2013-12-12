@@ -1,0 +1,65 @@
+;; This file contains a host-agnostic shimmre definition of shimmre's own
+;; grammar. The parser it describes is used as the front-end for other shimmre
+;; implementations / compilers.
+
+;; comments are initiated with ';'. whitespace is mostly not significant.
+_ <- -(';' [^\n]* | [\s])+
+
+;; rules are parse rules or compile rules
+rule <- parse | compile
+
+;; parse rules are either:
+parse <- mainP | sub
+
+;; the main parse rule; or
+mainP <- -'main' _ sub
+
+;; subordinate parse rules.
+sub <- atom _? -'<-' _? alt
+
+;; compile rules contain indented blocks of code
+compile <- atom _? -'->' code
+code <- ([\S ] | &([\n] [\s]) [\n])*
+
+;; unquoted words are identifiers
+atom <- [a-zA-Z_] [a-zA-Z0-9_'-]*
+
+;; quoted strings are terminals
+term <- -'"' ('\"' | [^"])* -'"'
+      | -"'" ("\'" | [^'])* -"'"
+
+;; regex-like bracket expressions specify character ranges
+charopt <- '[' ('\]' | [^\]])* ']'
+
+;; bottom-level expressions are atoms, terminals, character ranges, or
+;; parenthesized expressions. atoms are checked by a not-predicate to ensure
+;; they're not the start of a new rule.
+expr <- rAtom | term | charopt | paren
+rAtom <- !ruleInit atom
+ruleInit <- ('main' _)? atom _ '<-'
+          | atom _ '->'
+
+;; postfix operators
+rep  <- expr _? -'*'
+opt  <- expr _? -'?'
+plus <- expr _? -'+'
+expr'  <- rep | opt | plus | expr
+
+;; prefix operators
+not  <- -'!' _? expr'
+and  <- -'&' _? expr'
+drop <- -'-' _? expr'
+expr'' <- not | and | drop | expr'
+
+;; sequence
+cat <- expr'' (_ cat)?
+;; choice
+alt <- cat (_? -'|' _? alt)?
+;; parentheses are used for grouping
+paren <- -'(' _? alt _? -')'
+
+;; the init rule is a hook for backends to run their own setup code
+init <- -''
+
+;; the main rule recognizes a sequence of rules
+main rules <- init (_? rule)+ _?

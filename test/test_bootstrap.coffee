@@ -1,3 +1,2 @@
 fs = require 'fs'
-boot = require './bootstrap.js'
-require('./test_shimmre').test 'the bootstrapper', boot.compile
+require('./test_shimmre').test 'the bootstrapper', require('./shimmre.js').compile

@@ -136,7 +136,7 @@ postfix operator (`+`).
 In addition to not-predicate (`!`) and and-predicate (`&`), shimmre supports a
 'drop' prefix operator (`-`). A 'dropped' expression is still a part of the
 grammar and consumes input on a successful match, but the value of the match
-match (if any) is discarded.
+(if any) is discarded.
 
     [notP, andP, drop] = for [s,t] in [['!','not'],['&','and'],['-','drop']]
       map cat(string(s), _, exp1), nth(2), pluck, tag t
@@ -173,7 +173,7 @@ separator - not even a line break. Compile rules must be newline-separated for
 the reason explained above.
 
     rule = alt pRule, cRule
-    exports.parse = map cat(sepBy(rule, _), map(_, ->[])),
+    exports.parse = map cat(map(_, ->[]), sepBy(rule, _), map(_, ->[])),
       tag('document'), pluck
 
 Interpreting shimmre
@@ -184,8 +184,8 @@ match object.
 
     class Compile
 
-Code contained in compile rules is evaluated in a shared environment, permitting
-a great deal of flexibility in how parse results can be interpreted.
+Code contained in compile rules is evaluated in a shared context, which can be
+used to store program state.
 
       constructor: ->
         @rules = {}
