@@ -1,38 +1,22 @@
-fs = require 'fs'
 assert = require 'assert'
-boot = require '../bootstrap.coffee'
-shimmreSrc = fs.readFileSync 'shimmre.shimmre', 'utf8'
-jscSrc = fs.readFileSync 'jsc.shimmre', 'utf8'
 
-output = (sh, input) ->
-  assert (out = sh input)
-  assert.equal '', out.rem
-  out.val[0]
+output = (sh, input) -> sh(input).val[0]
 
-jsc = output boot.compile, jscSrc
-
-shims = [
-  ['the bootstrapper', boot.compile],
-  ['a self-hosted shimmre', output(boot.compile, shimmreSrc)],
-  ['a compiled-to-js shimmre', eval output(jsc, shimmreSrc)]
-]
-
-for [doc,shim] in shims
+exports.test = (doc, shim) ->
   shimmre = (prog, i) -> output(output(shim, prog), i)
 
   accepts = (prog, i) ->
-    try
-      shimmre(prog, i)
-      true
-    catch e
-      false
+    out1 = shim(prog)
+    if out1 and out1.rem is ''
+      out2 = out1.val[0] i
+      out2 and out2.rem is ''
 
   describe "in #{doc}", ->
     describe 'output', ->
       it 'is empty when no main rule is given', ->
-        assert.equal undefined, output(shim, 'a <- b')
+        assert.equal undefined, output(shim, 'a <- "b"')
       it 'is present when a main rule is given', ->
-        assert output(shim, 'main a <- b')
+        assert output(shim, 'main a <- "b"')
 
     describe 'sequencing', ->
       it "works", ->
@@ -57,6 +41,8 @@ for [doc,shim] in shims
         p = 'main a <- "opt"?'
         assert accepts(p, '')
         assert accepts(p, 'opt')
+        assert not accepts(p, 'optopt')
+        assert not accepts(p, 'nopt')
 
     describe 'repetition', ->
       it 'takes zero or more of its argument', ->
@@ -89,4 +75,16 @@ for [doc,shim] in shims
           p = 'main a <- [^asdf]'
           assert accepts(p, 'b')
           assert not accepts(p, 'd')
+
+    describe 'not-predicate', ->
+      it 'works', ->
+        p = 'main a <- !"b" [bc]'
+        assert accepts(p, 'c')
+        assert not accepts(p, 'b')
+
+    describe 'and-predicate', ->
+      it 'works', ->
+        p = 'main a <- &"b" [bc]'
+        assert accepts(p, 'b')
+        assert not accepts(p, 'c')
 
