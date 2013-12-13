@@ -1,0 +1,11 @@
+;; A simple shimmre/rb RPN calculator. The compiler in rbc.shimmjs can turn
+;; this into a Ruby module.
+num <- '-'? [0-9]+ ('.' [0-9]*)? num -> @stack.push _.join.to_f
+
+op <- ('+' | '-' | '*' | '/') op ->
+  @op2, @op1 = @stack.pop, @stack.pop
+  @stack.push @op1.send(*_, @op2)
+
+init <- '' init -> @stack = []
+
+main calc <- init ' '* ((num | op) ' '*)+ calc -> @stack.pop

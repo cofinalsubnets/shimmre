@@ -23,5 +23,5 @@ exports.compileWithFrontend = (file) ->
 
 jsCompiler = null
 exports.compiler = compiler = ->
-  jsCompiler ||= boot.compile(srcWithFrontend 'lib/jsc.shimmre').val[0]
+  jsCompiler ||= boot.compile(srcWithFrontend 'lib/jsc.shimmjs').val[0]
 
