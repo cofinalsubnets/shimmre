@@ -99,3 +99,15 @@ exports.test = (doc, shim) ->
         for place in ["minnesota", "florida", "nova scotia"]
           assert accepts(p, place)
         assert not accepts(p, "belgium")
+
+    describe 'a duplicate compile rule', ->
+      it 'is composed', ->
+        p = """
+        main a <- "1"
+        a -> return Number($[0]);
+        a -> return $[0] * 2;
+        """
+        assert.equal shimmre(p, '1'), 2
+
+
+
