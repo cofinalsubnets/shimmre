@@ -16,3 +16,15 @@ describe 'in a self-hosted shimmre', ->
       sum = shim(prog).val[0]
       assert.equal 10, sum('1+2+3+4').val[0]
 
+  describe 'indirect left-recursion', ->
+    it 'works', ->
+      prog = """
+        num <- [0-9]+ num -> return Number($);
+        add2 <- "nowaybro" | sum
+        add1 <- add2
+        main sum <- add1 -'+' num | num
+        sum -> return $.reduce(function(a,b) {return a + b;});
+      """
+      sum = shim(prog).val[0]
+      assert.equal 10, sum('0+1+2+3+4').val[0]
+
