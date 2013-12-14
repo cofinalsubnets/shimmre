@@ -87,6 +87,12 @@ exports.test = (doc, shim) ->
         p = 'main a <- &"b" [bc]'
         assert accepts(p, 'b')
         assert not accepts(p, 'c')
+
+    describe 'a semantic predicate', ->
+      it 'works', ->
+        p = 'main a <- @b b <- [a-z]+ b -> return $[0] != "x"'
+        assert accepts(p, 'abc')
+        assert not accepts(p, 'x')
     
     describe 'a comment', ->
       it 'is ignored until the end of the line', ->

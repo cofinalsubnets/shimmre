@@ -23,7 +23,8 @@ describe 'in a self-hosted shimmre', ->
     it 'works', ->
       prog = """
         num <- [0-9]+ num -> return Number($);
-        add2 <- "nowaybro" | sum
+        add3 <- sum
+        add2 <- "nowaybro" | add3
         add1 <- add2
         main sum <- add1 -'+' num | num
         sum -> return $.reduce(function(a,b) {return a + b;});

@@ -134,13 +134,15 @@ postfix operator (`+`).
     exp1 = alt repP, optP, plus, exp0
 
 In addition to not-predicate (`!`) and and-predicate (`&`), shimmre supports a
-'drop' prefix operator (`-`). A 'dropped' expression is still a part of the
-grammar and consumes input on a successful match, but the value of the match
-(if any) is discarded.
+'drop' (`-`) and semantic-predicate (`@`) prefix operators. A 'dropped'
+expression is still a part of the grammar and consumes input on a successful
+match, but the value of the match (if any) is discarded. A semantic predicate
+matches if its operand matches, and if its operand's output is true-ish.
 
-    [notP, andP, drop] = for [s,t] in [['!','not'],['&','and'],['-','drop']]
+    prefixes = [['!','not'],['&','and'],['-','drop'],['@','semantic']]
+    [notP, andP, drop, semP] = for [s,t] in prefixes
       map cat(string(s), _, exp1), nth(2), pluck, tag t
-    exp2  = map sepBy(alt(notP, andP, drop, exp1), __), tag 'cat'
+    exp2  = map sepBy(alt(notP, andP, drop, semP, exp1), __), tag 'cat'
 
 Choice (`|`) is the 'toplevel' expression.
 
@@ -266,6 +268,9 @@ earlier.
       not:   (n) -> peg.notp @_compile n
       and:   (n) -> peg.andp @_compile n
       drop:  (n) -> map @_compile(n), ->[]
+      semantic: (n) ->
+        _match = @_compile n
+        (s) -> (_res = _match s) and _res.val[0] and _res
 
 For compatibility and composability, the `compile` function exposed by the
 bootstrap shimmre wraps its output in a match object.

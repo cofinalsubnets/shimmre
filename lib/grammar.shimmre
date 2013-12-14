@@ -49,7 +49,8 @@ expr'  <- rep | opt | plus | expr
 not  <- -'!' _? expr'
 and  <- -'&' _? expr'
 drop <- -'-' _? expr'
-expr'' <- not | and | drop | expr'
+semp <- -'@' _? expr'
+expr'' <- not | and | drop | semp | expr'
 
 ;; sequence
 cat <- expr'' (_ cat)?
