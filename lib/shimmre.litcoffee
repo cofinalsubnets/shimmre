@@ -226,9 +226,14 @@ The main rule is stored under the Compile object's `output` attribute.
         @output = (s) -> _rs[r.data[0].data] s
 
 Parse rules store their compiled values under the Compile object's `rules`
-attribute.
+attribute. If multiple definitions for one rule exists, they are combined
+using ordered choice.
 
-      parse: (r) -> @rules[r[0].data] = @_compile r[1]
+      parse: ([{data}, body]) ->
+        if data of @rules
+          @rules[data] = peg.alt @rules[data], @_compile body
+        else
+          @rules[data] = @_compile body
 
 Compile rules have their code `eval`'d into JavaScript functions, and the
 consequent transformation function is `map`ped over the parse rule of the
@@ -241,8 +246,7 @@ implementations constrain compile rules to come after their associated parse
 rules. There's no reason why this has to be the case - I just haven't written
 it yet.
 
-      compile: (r) ->
-        [_atm, _code] = r
+      compile: ([_atm, _code]) ->
         # FIXME
         unless _rule = @rules[_atm.data]
           throw new Error(

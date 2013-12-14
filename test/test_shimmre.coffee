@@ -115,5 +115,12 @@ exports.test = (doc, shim) ->
         """
         assert.equal shimmre(p, '1'), 2
 
+    describe 'a duplicate parse rule', ->
+      it 'is alternated with the original', ->
+        p = 'main a <- "1" a <- "2"'
+        assert accepts(p, "1")
+        assert accepts(p, "2")
+
+
 
 
