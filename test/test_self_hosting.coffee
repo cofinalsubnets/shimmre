@@ -1,3 +1,4 @@
+###
 fs = require 'fs'
 boot = require './shimmre.js'
 build = require '../build_helpers'
@@ -41,3 +42,4 @@ describe 'in a self-hosted shimmre', ->
       assert res.rem is ''
 
 
+###

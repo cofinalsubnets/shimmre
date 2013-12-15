@@ -11,12 +11,10 @@ exports.test = (doc, shim) ->
       out2 = out1.val[0] i
       out2 and out2.rem is ''
 
-  describe "in #{doc}", ->
-    describe 'output', ->
-      it 'is empty when no main rule is given', ->
-        assert.equal undefined, output(shim, 'a <- "b"')
-      it 'is present when a main rule is given', ->
-        assert output(shim, 'main a <- "b"')
+  describe doc, ->
+    describe 'when no main rule is given', ->
+      it 'throws an error', ->
+        assert.throws (-> output shim, 'a <- "b"'), SyntaxError
 
     describe 'sequencing', ->
       it "works", ->

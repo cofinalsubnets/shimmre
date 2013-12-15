@@ -1,32 +1,53 @@
-shimmre
-=======
+# shimmre
 
-This is the bootstrap implementation of the shimmre/JS metalanguage. Shimmre is
-a language for building parsing expression grammar (PEG) parsers and applying
-transformations (written in shimmre's host language) to patterns matched by
-those parsers.
+This is a non-self-hosted implementation of the shimmre/js metalanguage.
+Shimmre is a language for building parsing expression grammar (PEG) parsers
+and applying transformations (written in shimmre's host language) to patterns
+matched by those parsers. It draws heavily from [OMeta][War09] for instruction
+and inspiration, but has several additional design goals:
 
-Shimmre is self-hosting in the sense that a shimmre/JS program defining
+- easy porting to new host languages;
+- code compatibility between host languages - in particular, shimmre grammars
+  are intended to be _completely_ compatible;
+- separation of code specifying syntax from code defining semantics;
+- a minimal grammar and runtime environment that makes it easy to implement
+  shimmre in shimmre.
+
+Shimmre/js is 'self-hosting' in the sense that a shimmre/js program defining
 shimmre's grammar and transformation rules exists. Since the transformation
-rules in a shimmre program are written in the host language, shimmre/JS still
+rules in a shimmre program are written in the host language, shimmre/js still
 requires a JavaScript runtime.
 
-Parsing expressions in shimmre are implemented as functions from strings to
+This version of shimmre uses a four-stage process to interpret a shimmre
+program:
+
+1. Preprocessing: text -> text
+2. Parsing: text -> AST
+3. Postprocessing: AST -> AST
+4. Compilation: AST -> output
+
+Shimmre has no purpose-made preprocessor and the code below defaults to using
+the identity function. The behavior of each of these stages can be overridden
+by injecting new dependencies, however.
+
+## Parsing shimmre
+
+Parsing expressions in shimmre/js are implemented as functions from strings to
 false-ish values (e.g. `false`, `null`) if the parse fails entirely, or to
 'match' values containing the parsed value and the remaining input if the
 parse partially or completely succeeds:
 
     match = (v, r) -> {val: v, rem: r}
 
-A parsing expression that returns a match has not necessarily succeeded; for
-example, a toplevel parser implementing a programming language that returns
-a match with unconsumed input has probably encountered a syntax error.
+Whether a parsing expression that matches an input has 'succeeded' depends on
+context. For example, a toplevel parser implementing the grammar for a
+programming language that returns a match with unconsumed input has probably
+encountered a syntax error.
 
 In the future or in alternate implementations, 'match' values may be extended to
 contain additional metadata, e.g. for use in error messages.
 
-Parsing expression functions
-----------------------------
+### Parsing expression functions
 
     peg =
 
@@ -57,8 +78,12 @@ Optional expressions are matched zero or one times.
 
 Repeated expressions are matched zero or more times.
 
-      rep: (p) -> (s) -> (r = p s) and
-        map(peg.rep(p), (a) -> r.val.concat a)(r.rem) or match([], s)
+      rep: (p) -> (s) ->
+        v = []
+        while r = p s
+          v = v.concat r.val
+          s = r.rem
+        match v, s
 
 And-predicates are expressions matched against by the grammar, but have no value
 and consume no input when they succeed:
@@ -69,8 +94,7 @@ Not-predicates are anti-matched, have no value, and consume no input:
 
       notp: (p) -> (str) -> not p(str) and match([], str)
 
-Convenience functions
----------------------
+### Convenience functions
 
     string = peg.term
     cat = (ms...) -> ms.reduce peg.cat
@@ -79,8 +103,7 @@ Convenience functions
     sepBy = (p, sep) -> cat p, peg.rep cat(map(sep, ->[]), p)
     cheat = (re) -> (s) -> (r = s.match re) and match [r[0]], s[r[0].length..]
 
-Transformation functions
-------------------------
+### Transformation functions
 
 `map` 'maps' transformation functions across a parsing expression. The result
 is a new parsing expression that, when successful, threads its value through the
@@ -95,12 +118,7 @@ The tags applied by `tag` are used later by the compiler.
     nth = (ns...) -> (v) -> v[n] for n in ns
     pluck = (v) -> v[0]
 
-Parsing shimmre
----------------
-
-Unlike the shimmre/JS self-implementation, the bootstrap shimmre uses a
-two-stage parse/compile process to interpret a shimmre program. The parse stage
-constructs an AST from the shimmre source code.
+### The parser
 
 With one important exception, whitespace is significant in shimmre only as a
 token separator. Comments in shimmre start with a semicolon and continue to the
@@ -175,53 +193,190 @@ separator - not even a line break. Compile rules must be newline-separated for
 the reason explained above.
 
     rule = alt pRule, cRule
-    exports.parse = map cat(map(_, ->[]), sepBy(rule, _), map(_, ->[])),
+    parse = map cat(map(_, ->[]), sepBy(rule, _), map(_, ->[])),
       tag('document'), pluck
 
-Interpreting shimmre
---------------------
+    exports.parse = parse
 
-The 'compile' stage walks the AST generated by the parse stage and returns a
-match object.
+## Postprocessing
 
-    class Compile
+After a document has been parsed, subsequent operations involve examining and
+transforming the document's abstract syntax tree.
 
-Code contained in compile rules is evaluated in a shared context, which can be
-used to store program state.
+    class ASTVisitor
+      visit: (node) ->
+        {tag: _tag, data: data} = node
+        this[_tag](data, node) if _tag of this
+      walk: (node) ->
+        @walk n for n in node.data if Array.isArray node.data
+        @visit node
 
-      constructor: ->
-        @rules = {}
-        @context = {}
+Shimmre first simplifies the tree by eliminating logically unnecessary `alt` and
+`cat` nodes.
 
-Data from the AST are dispatched by tag.
+    class ASTCleanup extends ASTVisitor
+      _pluck: (node) ->
+        if Array.isArray(node.data) and node.data.length is 1
+          [node.tag, node.data] = [node.data[0].tag, node.data[0].data]
+      _trans: (data) ->
+        diff = false
+        contents = []
+        for node in data
+          if node.tag is 'alt'
+            contents = contents.concat node.data
+            diff = true
+          else contents.push node
+        diff and contents
 
-      _compile: (d) ->
-        unless d.tag of this
-          throw new TypeError "Don't know how to compile #{d.tag}"
-        this[d.tag] d.data
+      cat: (data, node) ->
+        @_pluck node
+      alt: (data, node) ->
+        while t = @_trans node.data
+          node.data = t
+        @_pluck node
 
-The toplevel of a shimmre program. Rules are compiled, and the results are
-checked for referenced-but-undefined rules. Currently the self-implementation
-lacks this feature.
+    cleanup = (ast) -> new ASTCleanup().walk ast; ast
+    exports.cleanup = cleanup
 
+Shimmre then verifies that all referenced rules are defined, and partitions
+parse and compile rules (ensuring that compile rules come after their associated
+parse rules makes the next step easier).
+
+    class BaseRefChecker extends ASTVisitor
+      constructor: (@refdata) ->
+
+    class RRefChecker extends BaseRefChecker
+      atom: (name) -> @refdata.rvals[name] = true
+
+    class RefChecker extends BaseRefChecker
+      document: (rules) -> @visit r for r in rules
+      main: (body, rule) ->
+        @refdata.rules['parse'].push rule
+        @refdata.lvals['parse'][body.data[0].data] = true
+        new RRefChecker(@refdata).walk body
+      parse: (body, rule) ->
+        @_rule rule
+        new RRefChecker(@refdata).walk body[1]
+      compile: (body, rule) ->
+        @_rule rule
+      _rule: (rule) ->
+        @refdata.rules[rule.tag].push rule
+        @refdata.lvals[rule.tag][rule.data[0].data] = true
+
+    class RefData
+      constructor: (doc) ->
+        @lvals = {parse: {}, compile: {}}
+        @rvals = {}
+        @rules = {parse: [], compile: []}
+        new RefChecker(this).visit doc
+
+    refCheck = (doc) ->
+      rd = new RefData(doc)
+      rules = []
+
+      for v of rd.rvals
+        rules.push(v) if v not of rd.lvals.parse
+      if rules.length
+        throw new ReferenceError(
+          "Can't resolve invoked parsing expression(s): #{rules.join ', '}")
+
+      for v of rd.lvals.compile
+        rules.push(v) if v not of rd.lvals.parse
+      if rules.length
+        throw new ReferenceError("Orphan compile rule(s): #{rules.join ', '}")
+
+      doc.data = rd.rules.parse.concat rd.rules.compile
+      doc
+
+    exports.refCheck = refCheck
+
+Shimmre also checks that a main rule was supplied.
+
+    mainCheck = (doc) ->
+      rules = doc.data.filter (t) -> t.tag is 'main'
+      if rules.length is 0
+        throw new SyntaxError("No main rule found")
+      else if rules.length > 1
+        throw new SyntaxError("Multiple main rules found")
+      doc
+
+    exports.mainCheck = mainCheck
+
+    postprocess = (doc) -> mainCheck refCheck cleanup doc
+    exports.postprocess = postprocess
+
+## Compilation
+
+### Packrat parsing and left-recursion
+
+By default shimmre generates [packrat parsers][For02]. Packrat parsing  offers
+two main benefits:
+
+- The avoidance of potentially exponential parse time due to backtracking, since
+  no parse rule is evaluated more than once at a given position in the input.
+  Obviously this comes at the cost of greater memory use, and on certain inputs
+  (those that cause little or no backtracking) packrat parsers will be _slower_
+  than equivalent non-memoizing parsers.
+
+- More interestingly, by using a technique developed for OMeta, packrat parsing
+  allows parsing expression grammars to negotiate left-recursive parse rules.
+
+Shimmre's packrat parsing implementation uses a variation on OMeta's algorithm
+to resolve directly and indirectly left-recursive rules.
+
+    class LR
+    NOMEMO = new Object()
+
+    growLR = (fn, d, memo) ->
+      rem = memo[d].rem
+      while rem and (res = fn d) and res.rem.length < rem.length
+        rem = res.rem
+        memo[d] = res
+
+    memoize = (fn) -> memo = {}; (d) ->
+      if memo.hasOwnProperty d
+        if memo[d] is NOMEMO
+          return fn d
+        else if memo[d] instanceof LR
+          throw memo[d]
+        else return memo[d]
+      else
+        memo[d] = new LR()
+        try memo[d] = fn d
+        catch e
+          throw e unless e instanceof LR
+          if e is memo[d]
+            memo[d] = false
+            if memo[d] = fn d
+              growLR(fn, d, memo)
+          else
+            memo[d] = NOMEMO
+            throw e
+      memo[d]
+
+### Compilation targets
+
+Two back-ends to the shimmre compiler are provided. The first evaluates the
+shimmre code directly and returns a JavaScript function object implementing the
+shimmre program. The second compiles shimmre to stand-alone JavaScript. Both use
+the same basic mechanism to walk the AST and register their output.
+
+    class Backend extends ASTVisitor
+      constructor: (@packrat) -> @rules = {}; @context = {}
+      document: (rs) -> @visit r for r in rs
+
+#### The "eval" backend
+
+    class Eval extends Backend
       document: (rs) ->
-        @_compile r for r in rs
-        unresolved = []
-        for r of @rules
-          try @rules[r] ''
-          catch e
-            # FIXME: better solution than regex
-            if e instanceof TypeError and m = e.message.match /method '([^']+)/
-              unresolved.push m[1]
-            else throw e
-        if unresolved.length isnt 0
-          throw new ReferenceError(
-            "Can't resolve parsing expressions: #{unresolved.join ', '}")
+        super
+        if @packrat
+          @rules[r] = memoize @rules[r] for r of @rules
 
 The main rule is stored under the Compile object's `output` attribute.
 
       main: (r) ->
-        @_compile r
+        @visit r
         _rs = @rules
         @output = (s) -> _rs[r.data[0].data] s
 
@@ -230,55 +385,149 @@ attribute. If multiple definitions for one rule exists, they are combined
 using ordered choice.
 
       parse: ([{data}, body]) ->
-        if data of @rules
-          @rules[data] = peg.alt @rules[data], @_compile body
-        else
-          @rules[data] = @_compile body
+        @rules[data] =
+          if data of @rules
+            peg.alt @rules[data], @visit body
+          else
+            @visit body
 
-Compile rules have their code `eval`'d into JavaScript functions, and the
-consequent transformation function is `map`ped over the parse rule of the
-same name. Within the body of a compile rule, the parse rule's output is
-accessible through the `$` array argument. Judicious use of the drop operator
-ensures that the programmer won't have to deal with any unneeded results.
+Compile rules have their code blocks turned into JavaScript functions, and the
+resulting transformation function is `map`ped over the parse rule of the same
+name. Within the body of a compile rule, the parse rule's output is accessible
+through the `$` array argument. Judicious use of the drop operator ensures that
+the programmer won't have to deal with any unneeded results.
 
-While parse rules can be defined in any order, currently all shimmre
-implementations constrain compile rules to come after their associated parse
-rules. There's no reason why this has to be the case - I just haven't written
-it yet.
-
-      compile: ([_atm, _code]) ->
-        # FIXME
-        unless _rule = @rules[_atm.data]
-          throw new Error(
-            "Compile rule `#{_atm.data}' defined before parse rule")
-        _tfn = eval "(function ($) {#{_code.data}})"
-        _ctx = @context
-        _transform = (argv) ->
-          x = _tfn.call _ctx, argv
+      compile: ([{data: name}, {data: code}]) ->
+        tfn = new Function('$', code)
+        ctx = @context
+        transform = (argv) ->
+          x = tfn.call ctx, argv
           if x? then Array.isArray(x) and x or [x] else []
-        @rules[_atm.data] = map _rule, _transform
+        @rules[name] = map @rules[name], transform
+
+References to other rules are late-bound to permit recursive and out-of-order
+definitions, and so that all references end up pointing to the rule in its
+final state. The preprocessing phase ensures that all of these references will
+ultimately succeed.
+
+      atom:  (a) -> _rs = @rules; (s) -> _rs[a] s
 
 Parsing expression generation rules straightforwardly invoke functions defined
 earlier.
 
       plus: (r) -> @cat [r, {tag: 'rep', data: r}]
-      cat: (rs) -> cat.apply this, rs.map(@_compile, this)
-      alt: (rs) -> alt.apply this, rs.map(@_compile, this)
+      cat: (rs) -> cat.apply this, rs.map(@visit, this)
+      alt: (rs) -> alt.apply this, rs.map(@visit, this)
       term: peg.term
-      rep: (r) -> peg.rep @_compile r
-      opt: (r) -> peg.opt @_compile r
+      rep: (r) -> peg.rep @visit r
+      opt: (r) -> peg.opt @visit r
       charopt: (c) -> cheat RegExp "^#{c}"
-      atom:  (a) -> _rs = @rules; (s) -> _rs[a] s
-      not:   (n) -> peg.notp @_compile n
-      and:   (n) -> peg.andp @_compile n
-      drop:  (n) -> map @_compile(n), ->[]
+      not:   (n) -> peg.notp @visit n
+      and:   (n) -> peg.andp @visit n
+      drop:  (n) -> map @visit(n), ->[]
       semantic: (n) ->
-        _match = @_compile n
+        _match = @visit n
         (s) -> (_res = _match s) and _res.val[0] and _res
 
-For compatibility and composability, the `compile` function exposed by the
-bootstrap shimmre wraps its output in a match object.
+#### The JavaScript backend
 
-    exports.compile = map exports.parse, (pt) ->
-      (c = new Compile())._compile pt; [c.output]
+The JavaScript compiler can mostly be implemented using pre-existing code.
+
+    BASEDEFS = """
+      #{("var #{p} = #{peg[p].toString()};" for p of peg).join('\n')}
+      var map = function (a, b) {
+        return function (s) {
+          var res = a(s);
+          return res && match(b(res.val), res.rem);
+        };
+      };
+      var match = #{match.toString()};
+      var cheat = #{cheat.toString()};
+      var drop = function () {return [];};
+      var merge = function (v) {
+        return (v===null||v===undefined) ? [] : Array.isArray(v) ? v : [v];
+      };
+      var semp = function (f) {
+        return function (s) {
+          var res = f(s);
+          if (res && res.val[0])
+            return res;
+          else return false;
+        };
+      };
+    """
+
+    MEMODEFS = """
+      var LR = function () {};
+      var NOMEMO = new Object();
+      var memoize = #{memoize.toString()};
+      var growLR = #{growLR.toString()};
+    """
+
+    dottable = (s) -> s.match /^[a-zA-Z_]\w*$/
+
+The JS compiler's toplevel assembles a piece of JavaScript code that, when
+evaluated, returns the desired parsing function. Its functioning is otherwise
+directly analogous to the eval backend.
+
+    class JavaScript extends Backend
+      document: (rs) ->
+        super
+        ruledefs = for a of @rules
+          "#{JSON.stringify a} : function (s) {return #{@rules[a]}(s);}"
+        @output = """
+          (function () {
+            #{BASEDEFS}
+            #{MEMODEFS if @packrat}
+            var rules = { #{ruledefs.join ',\n'} }; 
+            return function (s) { return #{@atom @_main}(s); };
+          })()
+        """
+
+      main: (r) -> @visit r; @_main = r.data[0].data
+
+      parse: ([{data}, body]) ->
+        @rules[data] =
+          if data of @rules
+            "alt(#{@rules[data]},#{@visit body})"
+          else
+            @visit body
+
+      compile: ([{data: name}, {data: code}]) ->
+        tfn = "function ($) {#{code}}"
+        @rules[name] = "map(map(#{@rules[name]},#{tfn}),merge)"
+
+      atom: (a) -> "rules" +
+        if dottable a then "." + a else "[#{JSON.stringify a}]"
+      plus: (r) -> @cat [r, {tag: 'rep', data: r}]
+      cat: (rs) -> rs.map(@visit, this).reduce (c, n) -> "cat(#{c},#{n})"
+      alt: (rs) -> rs.map(@visit, this).reduce (c, n) -> "alt(#{c},#{n})"
+      term: (s) -> "term(#{JSON.stringify s})"
+      rep:  (r) -> "rep(#{@visit r})"
+      opt:  (r) -> "opt(#{@visit r})"
+      not:  (n) -> "notp(#{@visit n})"
+      and:  (n) -> "andp(#{@visit n})"
+      drop: (n) -> "drop(#{@visit n})"
+      semantic: (n) -> "semp(#{@visit n})"
+      charopt:  (c) -> "cheat(RegExp('^'+#{JSON.stringify c}))"
+      
+## Tying it all together
+
+The entire compilation pipeline can be summed up like this:
+
+    class Compiler
+      constructor: (@pre, @front, @post, @back) ->
+      compile: (d) -> map(@front, @post, @back) @pre d
+
+    evaluator = new Compiler ((n) -> n), parse, postprocess,
+      (d) -> (e = new Eval(true)).visit d; [e.output]
+
+    jsCompiler = new Compiler ((n) -> n), parse, postprocess,
+      (d) -> (j = new JavaScript(true)).visit d; [j.output]
+
+    exports.eval    = (d) -> evaluator.compile d
+    exports.compile = (d) -> jsCompiler.compile d
+
+[For02]: http://pdos.csail.mit.edu/~baford/packrat/thesis/thesis.pdf
+[War09]: http://www.vpri.org/pdf/tr2008003_experimenting.pdf
 
