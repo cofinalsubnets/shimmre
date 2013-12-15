@@ -14,26 +14,23 @@ describe 'reference checking', ->
     data =
       tag: 'document'
       data: [
-        {
-          tag: 'parse',
+        tag: 'parse'
+        data: [
+          {tag: 'atom', data: 'fisticuffs'}
+          tag: 'alt'
           data: [
-            {tag: 'atom', data: 'fisticuffs'},
-            {
-              tag: 'alt',
-              data: [
-                {tag: 'atom', data: 'twinge'},
-                {tag: 'atom', data: 'nevermore'}
-              ]
-            }
+            {tag: 'atom', data: 'nevermore'}
+            {tag: 'atom', data: 'thingy'}
           ]
-        }
+        ]
       ]
 
     it 'throws an error', ->
-      assert.throws (-> boot.refCheck data), ReferenceError
+      assert.throws (-> boot.postprocess.refCheck data), ReferenceError
     it 'includes the names of unreferenced rules', ->
-      assert.throws (-> boot.refCheck data), /twinge/
-      assert.throws (-> boot.refCheck data), /nevermore/
+      assert.throws (-> boot.postprocess.refCheck data), /thingy/
+      assert.throws (-> boot.postprocess.refCheck data), /nevermore/
+
   it 'partitions parse and compile rules', ->
     rules = [p1,c1,p2,c2] =  [
       {tag: 'parse',
@@ -47,7 +44,7 @@ describe 'reference checking', ->
     ]
 
     data = {tag: 'document', data: rules}
-    assert.deepEqual boot.refCheck(data).data, [p1,p2,c1,c2]
+    assert.deepEqual boot.postprocess.refCheck(data).data, [p1,p2,c1,c2]
 
 
 describe 'direct left-recursion', ->
@@ -73,12 +70,11 @@ describe 'indirect left-recursion', ->
     sum = boot.eval(prog).val[0]
     assert.equal 10, sum('0+1+2+3+4').val[0]
 
-describe 'the frontend', ->
-  it 'is implemented correctly', ->
-    front = build.src('lib/grammar.shimmre')
-    fshim = boot.eval(front.toString()).val[0]
-    res = fshim 'main a <- b'
+describe 'the metagrammar', ->
+  it 'accepts itself', ->
+    front = build.src('lib/grammar.shimmre').toString()
+    fshim = boot.eval(front).val[0]
+    res = fshim front
     assert res
     assert res.rem is ''
-
 

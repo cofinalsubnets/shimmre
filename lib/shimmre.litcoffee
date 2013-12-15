@@ -1,25 +1,26 @@
 # shimmre
 
-This is a non-self-hosted implementation of the shimmre/js metalanguage.
-Shimmre is a language for building parsing expression grammar (PEG) parsers
-and applying transformations (written in shimmre's host language) to patterns
-matched by those parsers. It draws heavily from [OMeta][War09] for instruction
-and inspiration, but has several additional design goals:
+This is an implementation of the shimmre/js metalanguage. Shimmre is a language
+for building parsing expression grammar (PEG) parsers and applying
+transformations (written in shimmre's host language) to patterns matched by
+those parsers. It draws heavily from [OMeta][War09] for instruction and
+inspiration, and has several design goals:
 
 - easy porting to new host languages;
 - code compatibility between host languages - in particular, shimmre grammars
   are intended to be _completely_ compatible;
 - separation of code specifying syntax from code defining semantics;
 - a minimal grammar and runtime environment that makes it easy to implement
-  shimmre in shimmre.
+  shimmre in shimmre;
+- a small and thoroughly documented codebase.
 
 Shimmre/js is 'self-hosting' in the sense that a shimmre/js program defining
 shimmre's grammar and transformation rules exists. Since the transformation
 rules in a shimmre program are written in the host language, shimmre/js still
 requires a JavaScript runtime.
 
-This version of shimmre uses a four-stage process to interpret a shimmre
-program:
+This version of shimmre uses a four-stage process to compile and/or execute
+a shimmre program:
 
 1. Preprocessing: text -> text
 2. Parsing: text -> AST
@@ -27,8 +28,8 @@ program:
 4. Compilation: AST -> output
 
 Shimmre has no purpose-made preprocessor and the code below defaults to using
-the identity function. The behavior of each of these stages can be overridden
-by injecting new dependencies, however.
+the identity function. The behavior of each stage can be overridden by injecting
+new dependencies, however.
 
 ## Parsing shimmre
 
@@ -228,15 +229,13 @@ Shimmre first simplifies the tree by eliminating logically unnecessary `alt` and
           else contents.push node
         diff and contents
 
-      cat: (data, node) ->
-        @_pluck node
+      cat: (data, node) -> @_pluck node
       alt: (data, node) ->
         while t = @_trans node.data
           node.data = t
         @_pluck node
 
     cleanup = (ast) -> new ASTCleanup().walk ast; ast
-    exports.cleanup = cleanup
 
 Shimmre then verifies that all referenced rules are defined, and partitions
 parse and compile rules (ensuring that compile rules come after their associated
@@ -272,37 +271,32 @@ parse rules makes the next step easier).
 
     refCheck = (doc) ->
       rd = new RefData(doc)
-      rules = []
 
-      for v of rd.rvals
-        rules.push(v) if v not of rd.lvals.parse
-      if rules.length
+      if (r = (v for v of rd.rvals when v not of rd.lvals.parse)).length
         throw new ReferenceError(
-          "Can't resolve invoked parsing expression(s): #{rules.join ', '}")
+          "Can't resolve invoked parsing expression(s): #{r.join ', '}")
 
-      for v of rd.lvals.compile
-        rules.push(v) if v not of rd.lvals.parse
-      if rules.length
-        throw new ReferenceError("Orphan compile rule(s): #{rules.join ', '}")
+      if (r = (v for v of rd.lvals.compile when v not of rd.lvals.parse)).length
+        throw new ReferenceError("Orphan compile rule(s): #{r.join ', '}")
 
       doc.data = rd.rules.parse.concat rd.rules.compile
       doc
 
-    exports.refCheck = refCheck
 
-Shimmre also checks that a main rule was supplied.
+Finally, shimmre also makes sure that exactly one main rule was supplied.
 
     mainCheck = (doc) ->
-      rules = doc.data.filter (t) -> t.tag is 'main'
-      if rules.length is 0
-        throw new SyntaxError("No main rule found")
-      else if rules.length > 1
-        throw new SyntaxError("Multiple main rules found")
-      doc
+      switch doc.data.filter((t) -> t.tag is 'main').length
+        when 0 then throw new SyntaxError("No main rule found")
+        when 1 then return doc
+        else throw new SyntaxError("Multiple main rules found")
 
-    exports.mainCheck = mainCheck
 
     postprocess = (doc) -> mainCheck refCheck cleanup doc
+    postprocess.cleanup = cleanup
+    postprocess.refCheck = refCheck
+    postprocess.mainCheck = mainCheck
+
     exports.postprocess = postprocess
 
 ## Compilation
@@ -322,7 +316,12 @@ two main benefits:
   allows parsing expression grammars to negotiate left-recursive parse rules.
 
 Shimmre's packrat parsing implementation uses a variation on OMeta's algorithm
-to resolve directly and indirectly left-recursive rules.
+to resolve directly and indirectly left-recursive rules. In short, it
+identifies left-recursions by pre-memoizing a special sentinel value and then
+progressively growing the parse result in a way that avoids an infinite loop.
+Accomodating indirect left-recursion also requires imposing additional checks
+on the memoization of intermediate rules. For more information, see the
+aforelinked paper on OMeta and [this blog post][Jel13].
 
     class LR
     NOMEMO = new Object()
@@ -335,11 +334,10 @@ to resolve directly and indirectly left-recursive rules.
 
     memoize = (fn) -> memo = {}; (d) ->
       if memo.hasOwnProperty d
-        if memo[d] is NOMEMO
-          return fn d
-        else if memo[d] instanceof LR
-          throw memo[d]
-        else return memo[d]
+        switch
+          when memo[d] is NOMEMO then return fn d
+          when memo[d] instanceof LR then throw memo[d]
+          else return memo[d]
       else
         memo[d] = new LR()
         try memo[d] = fn d
@@ -352,7 +350,7 @@ to resolve directly and indirectly left-recursive rules.
           else
             memo[d] = NOMEMO
             throw e
-      memo[d]
+        memo[d]
 
 ### Compilation targets
 
@@ -431,7 +429,7 @@ earlier.
 
 #### The JavaScript backend
 
-The JavaScript compiler can mostly be implemented using pre-existing code.
+The JavaScript compiler can mostly be implemented using existing code.
 
     BASEDEFS = """
       #{("var #{p} = #{peg[p].toString()};" for p of peg).join('\n')}
@@ -445,7 +443,7 @@ The JavaScript compiler can mostly be implemented using pre-existing code.
       var cheat = #{cheat.toString()};
       var drop = function () {return [];};
       var merge = function (v) {
-        return (v===null||v===undefined) ? [] : Array.isArray(v) ? v : [v];
+        return (v===null || v===undefined) ? [] : Array.isArray(v) ? v : [v];
       };
       var semp = function (f) {
         return function (s) {
@@ -510,13 +508,21 @@ directly analogous to the eval backend.
       drop: (n) -> "drop(#{@visit n})"
       semantic: (n) -> "semp(#{@visit n})"
       charopt:  (c) -> "cheat(RegExp('^'+#{JSON.stringify c}))"
+
+    Backend.Eval = Eval
+    Backend.JavaScript = JavaScript
+    exports.Backend = Backend
       
 ## Tying it all together
 
-The entire compilation pipeline can be summed up like this:
+The entire compilation pipeline comes down to this:
 
     class Compiler
       constructor: (@pre, @front, @post, @back) ->
+
+For compatibility and composability, instances of `Compiler` return output
+wrapped in a `match` result.
+
       compile: (d) -> map(@front, @post, @back) @pre d
 
     evaluator = new Compiler ((n) -> n), parse, postprocess,
@@ -525,9 +531,14 @@ The entire compilation pipeline can be summed up like this:
     jsCompiler = new Compiler ((n) -> n), parse, postprocess,
       (d) -> (j = new JavaScript(true)).visit d; [j.output]
 
+    exports.Compiler = Compiler
     exports.eval    = (d) -> evaluator.compile d
     exports.compile = (d) -> jsCompiler.compile d
 
+For examples of actual shimmre code, see the other files under `lib` in this
+repository.
+
 [For02]: http://pdos.csail.mit.edu/~baford/packrat/thesis/thesis.pdf
 [War09]: http://www.vpri.org/pdf/tr2008003_experimenting.pdf
+[Jel13]: http://walpurgisriot.github.io/blog/2013/12/13/indirect-left-recursion-in-packrat-parsers.html
 

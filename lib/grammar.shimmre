@@ -1,6 +1,7 @@
 ;; This file contains a host-agnostic shimmre definition of shimmre's own
-;; grammar. The parser it describes is used as the front-end for other shimmre
-;; implementations / compilers.
+;; grammar. The parser it describes can be used as the front-end for a
+;; self-hosted shimmre compiler. For information on the semantics of the
+;; grammar rules in this document, read shimmre.litcoffee.
 
 ;; comments are initiated with ';'. whitespace is mostly not significant.
 _ <- -(';' [^\n]* | [\s])+
@@ -43,7 +44,7 @@ ruleInit <- ('main' _)? atom _ '<-'
 rep  <- expr _? -'*'
 opt  <- expr _? -'?'
 plus <- expr _? -'+'
-expr'  <- rep | opt | plus | expr
+expr' <- rep | opt | plus | expr
 
 ;; prefix operators
 not  <- -'!' _? expr'
@@ -59,7 +60,7 @@ alt <- cat (_? -'|' _? alt)?
 ;; parentheses are used for grouping
 paren <- -'(' _? alt _? -')'
 
-;; the init rule is a hook for backends to run their own setup code
+;; the init rule is a hook for back-ends to run their own setup code
 init <- -''
 
 ;; the main rule recognizes a sequence of rules
