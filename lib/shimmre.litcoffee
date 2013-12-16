@@ -9,7 +9,8 @@ inspiration, and has several design goals:
 - easy porting to new host languages;
 - code compatibility between host languages - in particular, shimmre grammars
   are intended to be _completely_ compatible;
-- separation of code specifying syntax from code defining semantics;
+- separation of syntax-related code semantics-related code within a shimmre
+  program;
 - a minimal grammar and runtime environment that makes it easy to implement
   shimmre in shimmre;
 - a small and thoroughly documented codebase.
@@ -59,7 +60,7 @@ A parsing expression can be created from a terminal string. The value returned
 by the expression is the string itself.
 
       term: (t) -> (str) ->
-        str.substr(0, t.length) is t and match([t], str[t.length..])
+        match([t], str[t.length..]) if str.substr(0, t.length) is t
 
 Two expressions can be sequenced (_cat_enated). The resulting expression matches
 both operands in order, and returns the concatenation of the values of its
@@ -71,7 +72,7 @@ operands.
 Ordered choice (_alt_ernation) between to expressions returns an expression that
 matches one operand in order.
 
-      alt: (p1, p2) -> (str) -> p1(str) or p2 str
+      alt: (p1, p2) -> (str) -> p1(str) or p2(str)
 
 Optional expressions are matched zero or one times.
 
@@ -89,11 +90,11 @@ Repeated expressions are matched zero or more times.
 And-predicates are expressions matched against by the grammar, but have no value
 and consume no input when they succeed:
 
-      andp: (p) -> (str) -> p(str) and match([], str)
+      andp: (p) -> (str) -> match([], str) if p(str)
 
 Not-predicates are anti-matched, have no value, and consume no input:
 
-      notp: (p) -> (str) -> not p(str) and match([], str)
+      notp: (p) -> (str) -> match([], str) unless p(str)
 
 ### Convenience functions
 
@@ -205,35 +206,52 @@ After a document has been parsed, subsequent operations involve examining and
 transforming the document's abstract syntax tree.
 
     class ASTVisitor
-      visit: (node) ->
-        {tag: _tag, data: data} = node
-        this[_tag](data, node) if _tag of this
+      visit: (node) -> this[node.tag](node.data, node) if node.tag of this
       walk: (node) ->
-        @walk n for n in node.data if Array.isArray node.data
         @visit node
+        @walk n for n in node.data if Array.isArray node.data
 
-Shimmre first simplifies the tree by eliminating logically unnecessary `alt` and
-`cat` nodes.
+Shimmre first simplifies the tree by eliminating unnecessary `alt` and `cat`
+nodes. `liftNode` replaces nodes with only one child with the child node:
+
+    liftNode = (node) ->
+      while Array.isArray(node.data) and node.data.length is 1
+        [node.tag, node.data] = [node.data[0].tag, node.data[0].data]
+
+When `liftNode` returns, its argument has either zero children or multiple
+children.
+
+`mergeNode` merges the children of a node with the same type as its parent back
+into the parent node. For example, `Cat [Cat [x, y], z]` becomes
+`Cat [x, y, z]`.
+
+    mergeNode = (node) ->
+      if Array.isArray node.data
+        loop
+          contents = []; diff = false
+          for n in node.data
+            if n.tag is node.tag
+              contents = contents.concat n.data
+              diff = true
+            else contents.push n
+          if diff then node.data = contents else break
+
+When `mergeNode` returns, its argument has no children of the same type as
+itself.
+
+Since (subject to the assumption enforced by the parser that no `alt` or `cat`
+node is empty) `mergeNode` can never decrease the number of children of its
+argument, and `liftNode` can only optimize a node with exactly one child, we run
+no risk of leaving the node in an unoptimized state if we call `liftNode` and
+`mergeNode` in order.
+
+    scrubNode = (node) ->
+      liftNode node
+      mergeNode node
 
     class ASTCleanup extends ASTVisitor
-      _pluck: (node) ->
-        if Array.isArray(node.data) and node.data.length is 1
-          [node.tag, node.data] = [node.data[0].tag, node.data[0].data]
-      _trans: (data) ->
-        diff = false
-        contents = []
-        for node in data
-          if node.tag is 'alt'
-            contents = contents.concat node.data
-            diff = true
-          else contents.push node
-        diff and contents
-
-      cat: (data, node) -> @_pluck node
-      alt: (data, node) ->
-        while t = @_trans node.data
-          node.data = t
-        @_pluck node
+      cat: (data, node) -> scrubNode node
+      alt: (data, node) -> scrubNode node
 
     cleanup = (ast) -> new ASTCleanup().walk ast; ast
 
@@ -256,8 +274,7 @@ parse rules makes the next step easier).
       parse: (body, rule) ->
         @_rule rule
         new RRefChecker(@refdata).walk body[1]
-      compile: (body, rule) ->
-        @_rule rule
+      compile: (body, rule) -> @_rule rule
       _rule: (rule) ->
         @refdata.rules[rule.tag].push rule
         @refdata.lvals[rule.tag][rule.data[0].data] = true
@@ -270,7 +287,7 @@ parse rules makes the next step easier).
         new RefChecker(this).visit doc
 
     refCheck = (doc) ->
-      rd = new RefData(doc)
+      rd = new RefData doc
 
       if (r = (v for v of rd.rvals when v not of rd.lvals.parse)).length
         throw new ReferenceError(
@@ -282,15 +299,13 @@ parse rules makes the next step easier).
       doc.data = rd.rules.parse.concat rd.rules.compile
       doc
 
-
-Finally, shimmre also makes sure that exactly one main rule was supplied.
+Finally, shimmre makes sure that exactly one main rule was supplied.
 
     mainCheck = (doc) ->
       switch doc.data.filter((t) -> t.tag is 'main').length
         when 0 then throw new SyntaxError("No main rule found")
         when 1 then return doc
         else throw new SyntaxError("Multiple main rules found")
-
 
     postprocess = (doc) -> mainCheck refCheck cleanup doc
     postprocess.cleanup = cleanup
@@ -334,10 +349,9 @@ aforelinked paper on OMeta and [this blog post][Jel13].
 
     memoize = (fn) -> memo = {}; (d) ->
       if memo.hasOwnProperty d
-        switch
-          when memo[d] is NOMEMO then return fn d
-          when memo[d] instanceof LR then throw memo[d]
-          else return memo[d]
+        if memo[d] is NOMEMO          then return fn d
+        else if memo[d] instanceof LR then throw memo[d]
+        else                               return memo[d]
       else
         memo[d] = new LR()
         try memo[d] = fn d
@@ -345,23 +359,28 @@ aforelinked paper on OMeta and [this blog post][Jel13].
           throw e unless e instanceof LR
           if e is memo[d]
             memo[d] = false
-            if memo[d] = fn d
-              growLR(fn, d, memo)
+            if memo[d] = fn d then growLR(fn, d, memo)
           else
             memo[d] = NOMEMO
             throw e
         memo[d]
 
-### Compilation targets
+### Backends and compilation targets
 
-Two back-ends to the shimmre compiler are provided. The first evaluates the
-shimmre code directly and returns a JavaScript function object implementing the
-shimmre program. The second compiles shimmre to stand-alone JavaScript. Both use
-the same basic mechanism to walk the AST and register their output.
+A backend is a function from a parse tree to some kind of output. We implement
+backends using a variation on the visitor class we've already defined:
 
     class Backend extends ASTVisitor
       constructor: (@packrat) -> @rules = {}; @context = {}
       document: (rs) -> @visit r for r in rs
+
+    backend = (visitor) -> (doc) ->
+      (v = new visitor(true)).visit doc; v.output
+
+Two backends to the shimmre compiler are provided. The first evaluates the
+shimmre code directly and returns a JavaScript function object implementing the
+shimmre program. The second compiles shimmre to stand-alone JavaScript. Both use
+the same basic mechanism to walk the AST and register their output.
 
 #### The "eval" backend
 
@@ -375,8 +394,7 @@ The main rule is stored under the Compile object's `output` attribute.
 
       main: (r) ->
         @visit r
-        _rs = @rules
-        @output = (s) -> _rs[r.data[0].data] s
+        @output = ((s) -> @rules[r.data[0].data] s).bind this
 
 Parse rules store their compiled values under the Compile object's `rules`
 attribute. If multiple definitions for one rule exists, they are combined
@@ -397,35 +415,35 @@ the programmer won't have to deal with any unneeded results.
 
       compile: ([{data: name}, {data: code}]) ->
         tfn = new Function('$', code)
-        ctx = @context
         transform = (argv) ->
-          x = tfn.call ctx, argv
-          if x? then Array.isArray(x) and x or [x] else []
-        @rules[name] = map @rules[name], transform
+          if (x = tfn.call @context, argv)? then [x] else []
+        @rules[name] = map @rules[name], transform.bind(this)
 
 References to other rules are late-bound to permit recursive and out-of-order
 definitions, and so that all references end up pointing to the rule in its
 final state. The preprocessing phase ensures that all of these references will
 ultimately succeed.
 
-      atom:  (a) -> _rs = @rules; (s) -> _rs[a] s
+      atom:  (a) -> ((s) -> @rules[a] s).bind this
 
 Parsing expression generation rules straightforwardly invoke functions defined
 earlier.
 
+      term: peg.term
       plus: (r) -> @cat [r, {tag: 'rep', data: r}]
       cat: (rs) -> cat.apply this, rs.map(@visit, this)
       alt: (rs) -> alt.apply this, rs.map(@visit, this)
-      term: peg.term
-      rep: (r) -> peg.rep @visit r
-      opt: (r) -> peg.opt @visit r
-      charopt: (c) -> cheat RegExp "^#{c}"
-      not:   (n) -> peg.notp @visit n
-      and:   (n) -> peg.andp @visit n
-      drop:  (n) -> map @visit(n), ->[]
+      rep:  (r) -> peg.rep @visit r
+      opt:  (r) -> peg.opt @visit r
+      not:  (n) -> peg.notp @visit n
+      and:  (n) -> peg.andp @visit n
+      drop: (n) -> map @visit(n), ->[]
+      charopt:  (c) -> cheat RegExp "^#{c}"
       semantic: (n) ->
         _match = @visit n
         (s) -> (_res = _match s) and _res.val[0] and _res
+
+    evalBackend = backend Eval
 
 #### The JavaScript backend
 
@@ -479,7 +497,7 @@ directly analogous to the eval backend.
             #{MEMODEFS if @packrat}
             var rules = { #{ruledefs.join ',\n'} }; 
             return function (s) { return #{@atom @_main}(s); };
-          })()
+          }).call(this)
         """
 
       main: (r) -> @visit r; @_main = r.data[0].data
@@ -509,9 +527,7 @@ directly analogous to the eval backend.
       semantic: (n) -> "semp(#{@visit n})"
       charopt:  (c) -> "cheat(RegExp('^'+#{JSON.stringify c}))"
 
-    Backend.Eval = Eval
-    Backend.JavaScript = JavaScript
-    exports.Backend = Backend
+    jsBackend = backend JavaScript
       
 ## Tying it all together
 
@@ -521,22 +537,57 @@ The entire compilation pipeline comes down to this:
       constructor: (@pre, @front, @post, @back) ->
 
 For compatibility and composability, instances of `Compiler` return output
-wrapped in a `match` result.
+wrapped in an array and a `match` result. This means that compilers have
+identical outward semantics to regular matching functions defined using the PEG
+primitives, and a compiler supporting multiple (hypothetical) shimmre dialects
+could be created simply by `alt`ing together a compiler for each one.
 
-      compile: (d) -> map(@front, @post, @back) @pre d
+      compile: (d) -> map(@front, @post, @back, (n) -> [n]) @pre d
 
-    evaluator = new Compiler ((n) -> n), parse, postprocess,
-      (d) -> (e = new Eval(true)).visit d; [e.output]
+    Compiler.Default = Compiler.bind(null, ((n) -> n), parse, postprocess)
 
-    jsCompiler = new Compiler ((n) -> n), parse, postprocess,
-      (d) -> (j = new JavaScript(true)).visit d; [j.output]
+    evaluator  = new Compiler.Default evalBackend
+    jsCompiler = new Compiler.Default jsBackend
 
     exports.Compiler = Compiler
     exports.eval    = (d) -> evaluator.compile d
     exports.compile = (d) -> jsCompiler.compile d
 
-For examples of actual shimmre code, see the other files under `lib` in this
-repository.
+## Future directions
+
+One intriguing possibility might be to extend shimmre to operate over arbitrary
+sequential data, rather than just strings. The necessary modifications are
+very small, and providing a rule composition operator would make it easy for
+shimmre to traverse nested as well as flat sequences. We could then (for
+example) rewrite the postprocessing routine given in this document in shimmre
+itself.
+
+I've actually tried this, and found that while shimmre ably handles _traversal_
+of arbitrary serial data, the amount of host language code required to actually
+do anything means that there's little benefit to using shimmre over a pure host
+language solution. It might make sense if the host language were sorely lacking
+in convenient primitives for dealing with sequences, but then implementing
+shimmre in the first place would be difficult. Furthermore, the use of packrat
+parsing impacts many use cases for shimmre as a "visitor generator" - for
+example, when shimmre is expected to execute side effects on each encounter with
+a certain subsequence.
+
+In short, shimmre makes a decent parser - and the point of a parser is to impose
+structure on _unstructured_ data. That said, there may be a middle ground where
+a tool like shimmre can still be useful, like as an runtime "typechecker" that
+ensures an object implements a certain interface, or even as the basis for a
+testing framework where the desired properties of a datum are defined as a
+"grammar" according to which shimmre will accept or reject a test case -
+more generally, cases where the main concern is for verifying the structure of
+data, rather than interpreting or transforming its content. A few somewhat
+host-dependent but still fairly abstract syntactic extensions, like a
+generalized "field access" operator for example, would make writing this kind of
+program more pleasant.
+
+##  That's it!
+
+Thanks for reading this far! For examples of actual shimmre code, see the other
+files under `lib` in this repository.
 
 [For02]: http://pdos.csail.mit.edu/~baford/packrat/thesis/thesis.pdf
 [War09]: http://www.vpri.org/pdf/tr2008003_experimenting.pdf
