@@ -478,9 +478,12 @@ The JavaScript compiler can mostly be implemented using existing code.
       var NOMEMO = new Object();
       var memoize = #{memoize.toString()};
       var growLR = #{growLR.toString()};
+      for (var k in rules)
+        rules[k] = memoize(rules[k]);
     """
 
     dottable = (s) -> s.match /^[a-zA-Z_]\w*$/
+    exports.memoize = memoize
 
 The JS compiler's toplevel assembles a piece of JavaScript code that, when
 evaluated, returns the desired parsing function. Its functioning is otherwise
@@ -494,8 +497,8 @@ directly analogous to the eval backend.
         @output = """
           (function () {
             #{BASEDEFS}
-            #{MEMODEFS if @packrat}
             var rules = { #{ruledefs.join ',\n'} }; 
+            #{MEMODEFS if @packrat}
             return function (s) { return #{@atom @_main}(s); };
           }).call(this)
         """
@@ -523,7 +526,7 @@ directly analogous to the eval backend.
       opt:  (r) -> "opt(#{@visit r})"
       not:  (n) -> "notp(#{@visit n})"
       and:  (n) -> "andp(#{@visit n})"
-      drop: (n) -> "drop(#{@visit n})"
+      drop: (n) -> "map(#{@visit n},drop)"
       semantic: (n) -> "semp(#{@visit n})"
       charopt:  (c) -> "cheat(RegExp('^'+#{JSON.stringify c}))"
 

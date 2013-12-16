@@ -119,6 +119,19 @@ exports.test = (doc, shim) ->
         assert accepts(p, "1")
         assert accepts(p, "2")
 
+    describe 'direct left-recursion', ->
+      it 'works', ->
+        prog = """
+          num <- [0-9]+ num -> return Number($);
+          main sum <- sum -'+' num | num
+          sum -> return $.reduce(function(a,b) {return a + b;});
+        """
+        sum = shim(prog).val[0]
+        assert.equal 10, sum('1+2+3+4').val[0]
 
-
+    describe 'indirect left-recursion', ->
+      it 'works', ->
+        prog = " num <- [0-9]+ num -> return Number($);\nadd3 <- sum add2 <- 'nowaybro' | add3 add1 <- add2 main sum <- add1 -'+' num | num sum -> return $.reduce(function(a,b) {return a + b;});"
+        sum = shim(prog).val[0]
+        assert.equal 10, sum('0+1+2+3+4').val[0]
 

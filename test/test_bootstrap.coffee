@@ -47,28 +47,6 @@ describe 'reference checking', ->
     assert.deepEqual boot.postprocess.refCheck(data).data, [p1,p2,c1,c2]
 
 
-describe 'direct left-recursion', ->
-  it 'works', ->
-    prog = """
-      num <- [0-9]+ num -> return Number($);
-      main sum <- sum -'+' num | num
-      sum -> return $.reduce(function(a,b) {return a + b;});
-    """
-    sum = boot.eval(prog).val[0]
-    assert.equal 10, sum('1+2+3+4').val[0]
-
-describe 'indirect left-recursion', ->
-  it 'works', ->
-    prog = """
-      num <- [0-9]+ num -> return Number($);
-      add3 <- sum
-      add2 <- "nowaybro" | add3
-      add1 <- add2
-      main sum <- add1 -'+' num | num
-      sum -> return $.reduce(function(a,b) {return a + b;});
-    """
-    sum = boot.eval(prog).val[0]
-    assert.equal 10, sum('0+1+2+3+4').val[0]
 
 describe 'the metagrammar', ->
   it 'accepts itself', ->
