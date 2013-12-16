@@ -7,3 +7,6 @@ implementation lives in a couple hundred lines of CoffeeScript (there's also a
 mostly complete self-hosted version that's quite a bit smaller). Shimmre is
 specifically designed to be portable to new host languages with minimal effort.
 
+The main source file (`lib/shimmre.litcoffee`) is thoroughly annotated literate
+CoffeeScript, so for more information, start there.
+
