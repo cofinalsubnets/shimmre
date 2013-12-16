@@ -349,9 +349,9 @@ aforelinked paper on OMeta and [this blog post][Jel13].
 
     memoize = (fn) -> memo = {}; (d) ->
       if memo.hasOwnProperty d
-        if memo[d] is NOMEMO          then return fn d
+        if memo[d] is NOMEMO then return fn d
         else if memo[d] instanceof LR then throw memo[d]
-        else                               return memo[d]
+        else return memo[d]
       else
         memo[d] = new LR()
         try memo[d] = fn d
@@ -577,7 +577,7 @@ a certain subsequence.
 
 In short, shimmre makes a decent parser - and the point of a parser is to impose
 structure on _unstructured_ data. That said, there may be a middle ground where
-a tool like shimmre can still be useful, like as an runtime "typechecker" that
+a tool like shimmre can still be useful, like as a runtime "typechecker" that
 ensures an object implements a certain interface, or even as the basis for a
 testing framework where the desired properties of a datum are defined as a
 "grammar" according to which shimmre will accept or reject a test case -
