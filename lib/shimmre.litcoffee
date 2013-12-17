@@ -1,5 +1,7 @@
 # shimmre
 
+_(Shucks Howdy! It's a Mini Metagrammar Reification Engine)_
+
 This is an implementation of the shimmre/js metalanguage. Shimmre is a language
 for building parsing expression grammar (PEG) parsers and applying
 transformations (written in shimmre's host language) to patterns matched by
@@ -7,8 +9,8 @@ those parsers. It draws heavily from [OMeta][War09] for instruction and
 inspiration, and has several design goals:
 
 - easy porting to new host languages;
-- code compatibility between host languages - in particular, shimmre grammars
-  are intended to be _completely_ compatible;
+- code compatibility between host languages - in particular, shimmre grammar
+  rules are intended to be _completely_ compatible;
 - separation of syntax-related code semantics-related code within a shimmre
   program;
 - a minimal grammar and runtime environment that makes it easy to implement
@@ -30,7 +32,7 @@ a shimmre program:
 
 Shimmre has no purpose-made preprocessor and the code below defaults to using
 the identity function. The behavior of each stage can be overridden by injecting
-new dependencies, however.
+new dependencies.
 
 ## Parsing shimmre
 

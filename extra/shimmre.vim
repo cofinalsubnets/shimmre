@@ -7,7 +7,7 @@ endif
 
 syn include @shimJS syntax/javascript.vim
 
-syn match shimOp /\%(|\|+\|-\|!\|&\|*\|?\)/ display
+syn match shimOp /\%(|\|+\|-\|!\|&\|*\|?\|@\)/ display
 hi def link shimOp Operator
 
 syn match shimRuleDef /\%(<-\|->\)/ display
