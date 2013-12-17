@@ -455,8 +455,6 @@ earlier.
         _match = @visit n
         (s) -> (_res = _match s) and _res.val[0] and _res
 
-    evalBackend = backend Eval
-
 #### The JavaScript backend
 
 The JavaScript compiler can mostly be implemented using existing code.
@@ -547,31 +545,22 @@ directly analogous to the eval backend.
       semantic: (n) -> "semp(#{@visit n})"
       charopt:  (c) -> "cheat(RegExp('^'+#{JSON.stringify c}))"
 
-    jsBackend = backend JavaScript
-      
 ## Tying it all together
 
-The entire compilation pipeline comes down to this:
+For compatibility and composability, compilers return output wrapped in an array
+and a `match` result. This means that compilers have identical outward semantics
+to regular matching functions defined using the PEG primitives, and a compiler
+supporting multiple (hypothetical) shimmre dialects could be created simply by
+`alt`ing together a compiler for each one.
 
-    class Compiler
-      constructor: (@pre, @front, @post, @back) ->
+    compiler = (pre, front, post, back) -> (data) ->
+      map(front, post, back, (n) -> [n]) pre data
 
-For compatibility and composability, instances of `Compiler` return output
-wrapped in an array and a `match` result. This means that compilers have
-identical outward semantics to regular matching functions defined using the PEG
-primitives, and a compiler supporting multiple (hypothetical) shimmre dialects
-could be created simply by `alt`ing together a compiler for each one.
+    compiler.withDefaults = compiler.bind(null, ((n) -> n), parse, postprocess)
 
-      compile: (d) -> map(@front, @post, @back, (n) -> [n]) @pre d
-
-    Compiler.Default = Compiler.bind(null, ((n) -> n), parse, postprocess)
-
-    evaluator  = new Compiler.Default evalBackend
-    jsCompiler = new Compiler.Default jsBackend
-
-    exports.Compiler = Compiler
-    exports.eval    = (d) -> evaluator.compile d
-    exports.compile = (d) -> jsCompiler.compile d
+    exports.compiler = compiler
+    exports.eval     = compiler.withDefaults backend Eval
+    exports.compile  = compiler.withDefaults backend JavaScript
 
 ## Future directions
 
