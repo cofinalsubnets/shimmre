@@ -168,7 +168,7 @@ matches if its operand matches, and if its operand's output is true-ish.
 
 Choice (`|`) is the 'toplevel' expression.
 
-    exp3  = (s) -> map(sepBy(exp2, cat(_, string('|'), _)), tag 'alt') s
+    exp3  = map sepBy(exp2, cat(_, string('|'), _)), tag 'alt'
     paren = map cat(string('('), _, exp3, _, string ')'), nth(2)
 
 Shimmre recognizes regex-like bracket expressions such as `[0-9]` and
