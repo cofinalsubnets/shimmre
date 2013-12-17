@@ -495,7 +495,6 @@ The JavaScript compiler can mostly be implemented using existing code.
     """
 
     dottable = (s) -> s.match /^[a-zA-Z_]\w*$/
-    exports.memoize = memoize
 
 The JS compiler's toplevel assembles a piece of JavaScript code that, when
 evaluated, returns the desired parsing function. Its functioning is otherwise
