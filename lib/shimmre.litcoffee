@@ -347,23 +347,27 @@ aforelinked paper on OMeta and [this blog post][Jel13].
         rem = res.rem
         memo[d] = res
 
-    memoize = (fn) -> memo = {}; (d) ->
-      if memo.hasOwnProperty d
-        if memo[d] is NOMEMO then return fn d
-        else if memo[d] instanceof LR then throw memo[d]
-        else return memo[d]
-      else
-        memo[d] = new LR()
-        try memo[d] = fn d
-        catch e
-          throw e unless e instanceof LR
-          if e is memo[d]
-            memo[d] = false
-            if memo[d] = fn d then growLR(fn, d, memo)
-          else
-            memo[d] = NOMEMO
-            throw e
-        memo[d]
+    memoize = (fn) ->
+      memo = {}
+      wrapper = (d) ->
+        if memo.hasOwnProperty d
+          if memo[d] is NOMEMO then return fn d
+          else if memo[d] instanceof LR then throw memo[d]
+          else return memo[d]
+        else
+          memo[d] = new LR()
+          try memo[d] = fn d
+          catch e
+            throw e unless e instanceof LR
+            if e is memo[d]
+              memo[d] = false
+              if memo[d] = fn d then growLR(fn, d, memo)
+            else
+              memo[d] = NOMEMO
+              throw e
+          memo[d]
+      wrapper.clearCache = -> memo = {}
+      wrapper
 
 ### Backends and compilation targets
 
@@ -390,11 +394,18 @@ the same basic mechanism to walk the AST and register their output.
         if @packrat
           @rules[r] = memoize @rules[r] for r of @rules
 
-The main rule is stored under the Compile object's `output` attribute.
+The main rule is stored under the Compile object's `output` attribute. We empty
+the caches of memoized functions after each invocation of the parser in order to
+prevent memory leaks and to avoid aliasing bugs that can arise if parse rules
+return mutable objects.
 
-      main: (r) ->
-        @visit r
-        @output = ((s) -> @rules[r.data[0].data] s).bind this
+      main: (rule) ->
+        @visit rule
+        @output = ((s) ->
+          res = @rules[rule.data[0].data] s
+          @rules[r].clearCache() for r of @rules if @packrat
+          res
+        ).bind this
 
 Parse rules store their compiled values under the Compile object's `rules`
 attribute. If multiple definitions for one rule exists, they are combined
@@ -414,10 +425,9 @@ through the `$` array argument. Judicious use of the drop operator ensures that
 the programmer won't have to deal with any unneeded results.
 
       compile: ([{data: name}, {data: code}]) ->
-        tfn = new Function('$', code)
-        transform = (argv) ->
-          if (x = tfn.call @context, argv)? then [x] else []
-        @rules[name] = map @rules[name], transform.bind(this)
+        tfn = new Function('$', code).bind @context
+        transform = (argv) -> if (x = tfn argv)? then [x] else []
+        @rules[name] = map @rules[name], transform
 
 References to other rules are late-bound to permit recursive and out-of-order
 definitions, and so that all references end up pointing to the rule in its
@@ -473,7 +483,7 @@ The JavaScript compiler can mostly be implemented using existing code.
       };
     """
 
-    MEMODEFS = """
+    MEMOIZATION = """
       var LR = function () {};
       var NOMEMO = new Object();
       var memoize = #{memoize.toString()};
@@ -497,9 +507,15 @@ directly analogous to the eval backend.
         @output = """
           (function () {
             #{BASEDEFS}
+            var context;
             var rules = { #{ruledefs.join ',\n'} }; 
-            #{MEMODEFS if @packrat}
-            return function (s) { return #{@atom @_main}(s); };
+            #{MEMOIZATION if @packrat}
+            return function (s) {
+              context = {};
+              var res = #{@atom @_main}(s);
+              #{"for (var k in rules) rules[k].clearCache();" if @packrat}
+              return res;
+            };
           }).call(this)
         """
 
@@ -513,7 +529,7 @@ directly analogous to the eval backend.
             @visit body
 
       compile: ([{data: name}, {data: code}]) ->
-        tfn = "function ($) {#{code}}"
+        tfn = "(function ($) {#{code}}).bind(context)"
         @rules[name] = "map(map(#{@rules[name]},#{tfn}),merge)"
 
       atom: (a) -> "rules" +

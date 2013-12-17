@@ -122,7 +122,7 @@ exports.test = (doc, shim) ->
     describe 'direct left-recursion', ->
       it 'works', ->
         prog = """
-          num <- [0-9]+ num -> return Number($);
+          num <- [0-9]+ num -> return Number($.join(''));
           main sum <- sum -'+' num | num
           sum -> return $.reduce(function(a,b) {return a + b;});
         """
@@ -131,7 +131,15 @@ exports.test = (doc, shim) ->
 
     describe 'indirect left-recursion', ->
       it 'works', ->
-        prog = " num <- [0-9]+ num -> return Number($);\nadd3 <- sum add2 <- 'nowaybro' | add3 add1 <- add2 main sum <- add1 -'+' num | num sum -> return $.reduce(function(a,b) {return a + b;});"
+        prog = """
+          num <- [0-9]+
+          num -> return Number($.join(''));
+          add3 <- sum
+          add2 <- 'nowaybro' | add3
+          add1 <- add2
+          main sum <- add1 -'+' num | num
+          sum -> return $.reduce(function(a,b) {return a + b;});
+        """
         sum = shim(prog).val[0]
         assert.equal 10, sum('0+1+2+3+4').val[0]
 
